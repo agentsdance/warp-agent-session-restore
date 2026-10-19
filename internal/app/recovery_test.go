@@ -109,6 +109,20 @@ func TestRecoveryDoesNotRetireOpenOrTemporarilyMissingPane(t *testing.T) {
 	}
 }
 
+func TestRecoveryDoesNotRetireWhenOnlyUnrelatedLayoutRemains(t *testing.T) {
+	_, saved, next, done := recoveryPair(t)
+	s := saved.Sessions[1]
+	key := s.Agent + ":" + s.ID
+	receipts := map[string]recoveryReceipt{key: {WarpID: "after", Agent: s.Agent, ID: s.ID, Pane: s.Pane, PID: 123}}
+	next.Layout = &warpdb.Layout{Windows: []warpdb.Window{{Tabs: []warpdb.Tab{{Root: &warpdb.Node{Pane: &warpdb.Pane{UUID: "cccccccccccccccccccccccccccccccc"}}}}}}}
+	advanceRecovery(&done, saved, next, receipts, nil, 20*time.Second)
+	next.Taken = next.Taken.Add(time.Minute)
+	advanceRecovery(&done, saved, next, receipts, nil, 20*time.Second)
+	if done.Progress[key].Closed {
+		t.Fatal("retired while live agents were absent from layout")
+	}
+}
+
 func TestAcceptCurrentArchivesOriginalRecovery(t *testing.T) {
 	a, saved, _, done := recoveryPair(t)
 	if err := state.Save(a.Config.SnapshotPath(), saved); err != nil {

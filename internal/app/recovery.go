@@ -170,7 +170,13 @@ func advanceRecovery(done *restoreState, expected, next *session.Snapshot, recei
 	}
 	// An empty layout/capture can be a shutdown or transient DB view. It is not
 	// evidence that the user deliberately closed all recovery tabs.
-	canRetire := len(panes) > 0 && len(next.Sessions) > 0
+	canRetire := false
+	for _, s := range next.Sessions {
+		if panes[s.Pane] {
+			canRetire = true
+			break
+		}
+	}
 	var pending []session.Session
 	for _, s := range expected.Sessions {
 		key := s.Agent + ":" + s.ID
