@@ -19,11 +19,18 @@ The installer downloads the latest release for Apple Silicon or Intel and
 verifies its checksum. No Git, Go, or build tools are needed. Run the same
 command again to update.
 
-The command is installed at `/usr/local/bin/warp-agent-session-restore`, so you
-can run `warp-agent-session-restore` from any directory. Run the installer as
-your normal user; it asks for your macOS password only if needed to write the
-command to `/usr/local/bin`. Background recovery and settings belong to your
-account.
+The installer adds both `warp-agent-session-restore` and the shorter
+`warp-restore` alias to `/usr/local/bin`. Both names run the same app and use the
+same settings, saved sessions, and background service. You can use either from
+any directory.
+
+Run `warp-restore --version` or `warp-agent-session-restore --version` to check
+the installed version.
+
+Run the installer as your normal user; it asks for your macOS password only if
+needed to write the commands to `/usr/local/bin`. Background recovery and
+settings belong to your account. Rerunning the installer also adds the alias to
+an existing installation.
 
 To choose a different command directory, such as `~/.local/bin`, use:
 
@@ -46,14 +53,14 @@ and reopened in new windows when Warp restarts.
 Check your saved sessions with:
 
 ```sh
-warp-agent-session-restore status
+warp-restore status
 ```
 
 If there is no snapshot yet, keep Warp open with an agent running and check
 again after a few seconds. To remove background recovery and its setup:
 
 ```sh
-warp-agent-session-restore uninstall
+warp-restore uninstall
 ```
 
 You can also download the binary for your Mac from [Releases](https://github.com/agentsdance/warp-agent-session-restore/releases),
@@ -97,13 +104,15 @@ restore markers and per-session locks guard against duplicate launches.
 ## Commands
 
 ```sh
-warp-agent-session-restore snapshot             # capture immediately
-warp-agent-session-restore status               # saved names, counts and identification warnings
-warp-agent-session-restore restore --dry-run    # inspect generated Warp YAML
-warp-agent-session-restore restore              # open saved sessions
-warp-agent-session-restore watch                # foreground service; only one watcher is allowed
-warp-agent-session-restore uninstall            # stop service, remove managed hooks/shell block
+warp-restore snapshot             # capture immediately
+warp-restore status               # saved names, counts and identification warnings
+warp-restore restore --dry-run    # inspect generated Warp YAML
+warp-restore restore              # open saved sessions
+warp-restore watch                # foreground service; only one watcher is allowed
+warp-restore uninstall            # stop service, remove managed hooks/shell block
 ```
+
+Every command also works with `warp-agent-session-restore`.
 
 `restore --snapshot /absolute/path/to/snapshot.json` restores a historical
 snapshot. Failed launches can be retried with `restore`. Successful sessions are
@@ -187,7 +196,7 @@ yet been validated end to end.
 
 ### Releases
 
-Push a version tag such as `v1.0.0` to run the release workflow. It runs the
+Push a version tag such as `v0.0.1` to run the release workflow. It runs the
 tests, builds macOS binaries for Apple Silicon and Intel, and publishes both
 with `SHA256SUMS` on GitHub Releases. A published release is required for the
 download installer; it never builds from source on the user's computer.
@@ -195,7 +204,7 @@ download installer; it never builds from source on the user's computer.
 To install a particular release:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/agentsdance/warp-agent-session-restore/master/install.sh | WARP_RESTORE_VERSION=v1.0.0 sh
+curl -fsSL https://raw.githubusercontent.com/agentsdance/warp-agent-session-restore/master/install.sh | WARP_RESTORE_VERSION=v0.0.1 sh
 ```
 
 References: [Warp launch configurations](https://docs.warp.dev/terminal/sessions/launch-configurations),

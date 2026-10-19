@@ -12,6 +12,8 @@ import (
 	"github.com/agentsdance/warp-agent-session-restore/internal/proc"
 )
 
+var version = "dev"
+
 func main() {
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "warp-agent-session-restore:", err)
@@ -26,12 +28,17 @@ func run(args []string) error {
 	}
 	flags := flag.NewFlagSet("warp-agent-session-restore", flag.ContinueOnError)
 	flags.StringVar(&home, "home", home, "configuration home (for isolated testing)")
+	showVersion := flags.Bool("version", false, "show the installed version")
 	flags.Usage = usage
 	if err = flags.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			return nil
 		}
 		return err
+	}
+	if *showVersion {
+		fmt.Println("warp-agent-session-restore", version)
+		return nil
 	}
 	args = flags.Args()
 	if len(args) == 0 || args[0] == "help" {
@@ -112,6 +119,9 @@ func usage() {
 	fmt.Println(`warp-agent-session-restore — resume Codex and Claude Code after restarting Warp
 
 Usage: warp-agent-session-restore [--home DIR] COMMAND
+       warp-restore [--home DIR] COMMAND
+
+Use --version to show the installed version.
 
   install       Set up session tracking and automatic recovery in the background
   snapshot      Capture current Warp agent sessions

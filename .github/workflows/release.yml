@@ -26,7 +26,7 @@ jobs:
         run: |
           mkdir -p dist
           for architecture in arm64 amd64; do
-            GOARCH="$architecture" go build -trimpath -ldflags='-s -w' -o "dist/warp-agent-session-restore-darwin-$architecture" .
+            GOARCH="$architecture" go build -trimpath -ldflags="-s -w -X main.version=$GITHUB_REF_NAME" -o "dist/warp-agent-session-restore-darwin-$architecture" .
           done
           cd dist
           shasum -a 256 warp-agent-session-restore-darwin-* > SHA256SUMS
@@ -34,8 +34,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          release_flags=()
+          release_flags=(--latest)
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then
-            release_flags+=(--prerelease)
+            release_flags=(--prerelease)
           fi
           gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes "${release_flags[@]}"

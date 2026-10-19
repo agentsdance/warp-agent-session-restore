@@ -34,9 +34,9 @@ main() {
                 printf '%s\n' \
                     'Install Warp Agent Session Restore for macOS.' \
                     'Usage: sh install.sh [--bin-dir DIR] [--no-service] [--home DIR]' \
-                    'The command is installed in /usr/local/bin by default.' \
+                    'Both warp-agent-session-restore and warp-restore are installed in /usr/local/bin by default.' \
                     'Run as your normal user; sudo is requested only if the command directory requires it.' \
-                    'Set WARP_RESTORE_VERSION to install a specific release, such as v1.0.0.'
+                    'Set WARP_RESTORE_VERSION to install a specific release, such as v0.0.1.'
                 exit 0
                 ;;
             *) fail "Unknown option: $1. Use --help for usage." ;;
@@ -66,7 +66,7 @@ main() {
     fi
     case "$release_tag" in
         v[0-9]*) ;;
-        *) fail 'Release versions must start with v and a number, such as v1.0.0.' ;;
+        *) fail 'Release versions must start with v and a number, such as v0.0.1.' ;;
     esac
     case "$release_tag" in
         *[!a-zA-Z0-9._-]*) fail "Invalid release version: $release_tag." ;;
@@ -104,13 +104,32 @@ main() {
     if [ -e "$command_path" ] && [ ! -f "$command_path" ]; then
         fail "$command_path is not a regular file. Choose another --bin-dir."
     fi
+    alias_path=$bin_dir/warp-restore
+    if [ -L "$alias_path" ]; then
+        alias_target=$(readlink "$alias_path") || fail "Could not read $alias_path."
+        case "$alias_target" in
+            warp-agent-session-restore|"$command_path") ;;
+            *) fail "$alias_path already points to another command. Choose another --bin-dir or remove the link before installing." ;;
+        esac
+    elif [ -e "$alias_path" ]; then
+        fail "$alias_path already exists. Choose another --bin-dir or move it before installing."
+    fi
     printf 'Installing command at %s...\n' "$command_path"
+    needs_sudo=false
     if mkdir -p -m 755 "$bin_dir" 2>/dev/null && [ -w "$bin_dir" ]; then
         /usr/bin/install -m 755 "$binary" "$command_path" || fail "Could not install the command at $command_path."
     else
+        needs_sudo=true
         printf '%s\n' 'macOS may ask for your password to install the command.'
         /usr/bin/sudo /usr/bin/install -d -m 755 "$bin_dir" || fail "Could not create $bin_dir. Try --bin-dir \"\$HOME/.local/bin\"."
         /usr/bin/sudo /usr/bin/install -m 755 "$binary" "$command_path" || fail "Could not install the command at $command_path."
+    fi
+    if [ ! -L "$alias_path" ]; then
+        if [ "$needs_sudo" = true ]; then
+            /usr/bin/sudo /bin/ln -s warp-agent-session-restore "$alias_path" || fail "Could not create $alias_path."
+        else
+            ln -s warp-agent-session-restore "$alias_path" || fail "Could not create $alias_path."
+        fi
     fi
 
     set -- install
@@ -121,10 +140,10 @@ main() {
         set -- --home "$install_home" "$@"
     fi
     "$command_path" "$@"
-    printf '\nCommand installed: %s\n' "$command_path"
+    printf '\nCommands installed:\n  %s\n  %s\n' "$command_path" "$alias_path"
     case ":$PATH:" in
-        *":$bin_dir:"*) printf '%s\n' 'Run warp-agent-session-restore status to check saved sessions.' ;;
-        *) printf 'Add %s to your PATH to run warp-agent-session-restore by name.\n' "$bin_dir" ;;
+        *":$bin_dir:"*) printf '%s\n' 'Run warp-restore status to check saved sessions. Both command names work.' ;;
+        *) printf 'Add %s to your PATH to run warp-restore or warp-agent-session-restore by name.\n' "$bin_dir" ;;
     esac
 }
 
