@@ -229,7 +229,7 @@ download installer; it never builds from source on the user's computer.
 To install a particular release:
 
 ```sh
-curl -fsSL https://warp-restore.ai-infra.org/install.sh | WARP_RESTORE_VERSION=v0.0.1 sh
+curl -fsSL https://warp-restore.ai-infra.org/install.sh | WARP_RESTORE_VERSION=v0.0.2 sh
 ```
 
 References: [Warp launch configurations](https://docs.warp.dev/terminal/sessions/launch-configurations),

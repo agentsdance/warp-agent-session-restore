@@ -34,7 +34,7 @@ func TestBundleHasVerifiedIdentityAndCanBeReinstalled(t *testing.T) {
 		if out, err := exec.Command("/usr/bin/codesign", "--verify", "--strict", bundle).CombinedOutput(); err != nil {
 			t.Fatalf("signature: %v %s", err, out)
 		}
-		signature, err := exec.Command("/usr/bin/codesign", "-d", "--verbose=2", bundle).CombinedOutput()
+		signature, err := exec.Command("/usr/bin/codesign", "-d", "--verbose=4", bundle).CombinedOutput()
 		if err != nil {
 			t.Fatalf("read signature: %v %s", err, signature)
 		}
@@ -44,7 +44,10 @@ func TestBundleHasVerifiedIdentityAndCanBeReinstalled(t *testing.T) {
 				hash = line
 			}
 		}
-		if hash == "" || (firstHash != "" && hash != firstHash) {
+		if hash == "" {
+			t.Fatal("codesign did not report the code directory hash")
+		}
+		if firstHash != "" && hash != firstHash {
 			t.Fatal("reinstall changed code identity for the same release")
 		}
 		firstHash = hash
