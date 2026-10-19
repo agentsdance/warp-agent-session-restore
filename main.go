@@ -72,7 +72,7 @@ func run(args []string) error {
 		return a.Watch(ctx)
 	case "hook":
 		if len(args) != 2 {
-			return fmt.Errorf("usage: hook claude")
+			return fmt.Errorf("usage: hook <claude|droid>")
 		}
 		return a.Hook(args[1], os.Stdin)
 	case "install":
@@ -116,7 +116,7 @@ func run(args []string) error {
 }
 
 func usage() {
-	fmt.Println(`warp-agent-session-restore — resume Codex and Claude Code after restarting Warp
+	fmt.Println(`warp-agent-session-restore — resume Codex, Claude Code, and Droid after restarting Warp
 
 Usage: warp-agent-session-restore [--home DIR] COMMAND
        warp-restore [--home DIR] COMMAND

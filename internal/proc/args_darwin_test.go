@@ -16,12 +16,12 @@ func TestArgumentsPreserveBoundariesAndDiscardSecrets(t *testing.T) {
 		b = append(b, []byte(a)...)
 		b = append(b, 0)
 	}
-	b = append(b, []byte("SECRET=do-not-retain\x00WARP_TERMINAL_SESSION_UUID=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\x00CODEX_HOME=/custom\x00")...)
+	b = append(b, []byte("SECRET=do-not-retain\x00WARP_TERMINAL_SESSION_UUID=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\x00CODEX_HOME=/custom\x00FACTORY_HOME_OVERRIDE=/factory-home\x00")...)
 	got, env, err := parseProcArgs(b)
 	if err != nil || !reflect.DeepEqual(got, args) {
 		t.Fatalf("%q %v", got, err)
 	}
-	if env["SECRET"] != "" || env["CODEX_HOME"] != "/custom" || len(env) != 2 {
+	if env["SECRET"] != "" || env["CODEX_HOME"] != "/custom" || env["FACTORY_HOME_OVERRIDE"] != "/factory-home" || len(env) != 3 {
 		t.Fatal("environment filtering failed")
 	}
 }

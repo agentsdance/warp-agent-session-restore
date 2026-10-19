@@ -2,14 +2,14 @@
 
 [Website](https://warp-restore.ai-infra.org) · [Releases](https://github.com/agentsdance/warp-agent-session-restore/releases) · [Installer source](install.sh)
 
-Resume Codex and Claude Code conversations after restarting Warp on macOS.
+Resume Codex, Claude Code, and Factory Droid conversations after restarting Warp on macOS.
 The service snapshots running agents and their Warp pane layout, then opens a
 saved launch configuration when it detects a new Warp app process. It resumes
 the recorded conversation IDs without replaying prompts.
 
 ## Install
 
-Requirements: macOS, Warp Stable, and installed Codex / Claude Code CLIs.
+Requirements: macOS, Warp Stable, and an installed Codex, Claude Code, or Droid CLI.
 
 Paste this into Terminal:
 
@@ -58,12 +58,12 @@ The chosen directory must be on your PATH to run the command by name.
 
 Setup installs the background app at `~/Applications/Warp Restore.app` and a
 command helper in `~/.warp-agent-session-restore`, backs up and updates Claude
-Code settings, and registers background recovery to start immediately
+Code and Droid hook settings, and registers background recovery to start immediately
 and at login. The installer reports each completed step, shows whether automatic
 restore is enabled, and prints commands for checking saved sessions and removing
 the setup.
 
-After setup, open a new Warp tab and start Codex or Claude Code. With automatic
+After setup, open a new Warp tab and start Codex, Claude Code, or Droid. With automatic
 restore enabled (the default), supported sessions are saved every five seconds
 and reopened in new windows when Warp restarts.
 
@@ -166,6 +166,7 @@ restoration commands from running the same conversation concurrently.
 - Each captured session stores its name against its exact conversation ID.
   Codex names come from `session_index.jsonl`; Claude names come from validated
   process metadata, with transcript `custom-title` records as a fallback.
+  Droid names come from the exact transcript’s `session_start` header.
   Names refresh every poll, so `/rename` changes are captured without restarting
   the agent. Automatically derived Claude names are marked separately from user
   names. Sessions without a name receive an agent/short-ID display label.
@@ -183,6 +184,14 @@ restoration commands from running the same conversation concurrently.
 - Claude uses exact PID/session metadata when available, with process birth
   time checks. Lifecycle hooks provide a fallback for versions without it.
   New hook events, including the next submitted prompt, populate that fallback.
+- Droid uses lifecycle hooks tied to the interactive process and resumes with
+  `droid resume <session-id>`. Installation adds Droid to older configurations
+  and merges hooks into Factory’s effective user hook file (`hooks.json`, legacy
+  `hooks/hooks.json`, or `settings.json`), preserving other hooks and settings.
+  Start or resume Droid after installation to record its ID; the next submitted
+  prompt also records it. Disabled or organization-restricted hooks cannot track
+  Droid sessions. Headless `droid exec`, daemons, and utility commands are excluded.
+  `FACTORY_HOME_OVERRIDE` is preserved and selects `<override>/.factory`.
 - Codex identification reads the transcript held by the CLI process, validates
   its session metadata, and excludes subagent transcripts. Ambiguous sessions
   are skipped and reported; working-directory similarity is never used to guess.
@@ -208,7 +217,7 @@ Configuration is `~/.warp-agent-session-restore/config.json`. Set `auto_resume` 
 or adjust `poll_seconds`, `exit_grace_seconds`, and `keep_snapshots`.
 `local_codex` is enabled at installation when `--no-daemon` is available.
 Snapshots store session IDs, names, directories and CLI options in owner-only files;
-they do not copy conversation content. Only `CODEX_HOME` / `CLAUDE_CONFIG_DIR`
+they do not copy conversation content. Only `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, and `FACTORY_HOME_OVERRIDE`
 environment overrides are retained.
 
 Logs: `~/.warp-agent-session-restore/watch.log`.
@@ -241,6 +250,12 @@ metadata, restore claims, absence of duplicate agents, and continued capture
 across watcher polls. This validates local CLI restoration; sessions still using
 the shared Codex daemon remain subject to the mapping limitation above.
 
+Droid support was checked locally with Droid 0.223.0: a live conversation was
+recorded, exited, and resumed through `run-session` in a new pane environment.
+The conversation ID, title, directory, and options matched after rediscovery;
+a duplicate launch was blocked. This Droid check did not restart the full Warp
+application.
+
 ### Releases
 
 Push a version tag such as `v0.0.1` to run the release workflow. It runs the
@@ -256,4 +271,5 @@ curl -fsSL https://warp-restore.ai-infra.org/install.sh | WARP_RESTORE_VERSION=v
 
 References: [Warp launch configurations](https://docs.warp.dev/terminal/sessions/launch-configurations),
 [Warp URI scheme](https://docs.warp.dev/terminal/more-features/uri-scheme), and
-[Claude lifecycle hooks](https://code.claude.com/docs/en/hooks).
+[Claude lifecycle hooks](https://code.claude.com/docs/en/hooks), and
+[Factory Droid lifecycle hooks](https://docs.factory.com/harness/hooks).

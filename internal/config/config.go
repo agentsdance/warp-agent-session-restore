@@ -107,6 +107,24 @@ func Default(home string) *Config {
 		ExitGraceSeconds: 20,
 		Agents: []Agent{
 			{
+				Name:           "droid",
+				Match:          []string{"droid"},
+				SessionSource:  SourceRegistry,
+				ResumeTemplate: "{{.Bin}} resume {{.SessionID}}{{if .Args}} {{.Args}}{{end}}",
+				ValueFlags:     []string{"--settings", "--append-system-prompt", "--append-system-prompt-file", "--auto"},
+				DropArgs: []DropArg{
+					{Flag: "--resume", Value: ValueOptional},
+					{Flag: "-r", Value: ValueOptional},
+					{Flag: "--last", Value: ValueNone},
+					{Flag: "--fork", Value: ValueOptional},
+					{Flag: "--cwd", Value: ValueRequired},
+					{Flag: "--worktree", Value: ValueOptional},
+					{Flag: "-w", Value: ValueOptional},
+					{Flag: "--worktree-dir", Value: ValueRequired},
+				},
+				DropPositionals: true,
+			},
+			{
 				Name:           "claude",
 				Match:          []string{"claude"},
 				SessionSource:  SourceRegistry,
@@ -188,6 +206,9 @@ func Load(home string) (*Config, error) {
 
 	// Start from the default so a partial file still gets sane agent definitions.
 	cfg := def
+	// Decode agent definitions into fresh structs. Reusing the default slice
+	// can leak fields from another agent when a saved list has a different order.
+	cfg.Agents = nil
 	if err := json.Unmarshal(b, cfg); err != nil {
 		return nil, fmt.Errorf("parse config %s: %w", p, err)
 	}

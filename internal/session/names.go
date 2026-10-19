@@ -127,6 +127,12 @@ func claudeName(dir string, s Session) (savedName, bool) {
 }
 
 func agentHome(home string, s Session) string {
+	if s.Agent == "droid" {
+		if override := s.Env["FACTORY_HOME_OVERRIDE"]; override != "" {
+			home = override
+		}
+		return filepath.Join(home, ".factory")
+	}
 	key, fallback := "CODEX_HOME", ".codex"
 	if s.Agent == "claude" {
 		key, fallback = "CLAUDE_CONFIG_DIR", ".claude"
@@ -188,6 +194,8 @@ func CaptureNames(home string, sessions []Session, layout *warpdb.Layout, previo
 			name, found = indexes[dir][s.ID]
 		case "claude":
 			name, found = claudeName(dir, *s)
+		case "droid":
+			name, found = droidName(dir, *s)
 		}
 		if found {
 			s.AgentName, s.AgentNameSource = name.name, name.source
@@ -199,6 +207,42 @@ func CaptureNames(home string, sessions []Session, layout *warpdb.Layout, previo
 		}
 		s.Name, s.NameSource = s.DisplayName()
 	}
+}
+
+// Droid keeps its current title in the transcript header. Match both filename
+// and header ID; never select another conversation by project or recency.
+func droidName(dir string, s Session) (savedName, bool) {
+	if !ValidID(s.ID) {
+		return savedName{}, false
+	}
+	files, _ := filepath.Glob(filepath.Join(dir, "sessions", "*", s.ID+".jsonl"))
+	if len(files) != 1 {
+		return savedName{}, false
+	}
+	f, err := os.Open(files[0])
+	if err != nil {
+		return savedName{}, false
+	}
+	defer f.Close()
+	r := bufio.NewReaderSize(f, 64<<10)
+	line, err := r.ReadSlice('\n')
+	if err != nil {
+		return savedName{}, false
+	}
+	var header struct {
+		Type   string  `json:"type"`
+		ID     string  `json:"id"`
+		Title  *string `json:"title"`
+		Manual bool    `json:"isSessionTitleManuallySet"`
+	}
+	if json.Unmarshal(line, &header) != nil || header.Type != "session_start" || header.ID != s.ID || header.Title == nil {
+		return savedName{}, false
+	}
+	source := "droid_derived"
+	if header.Manual {
+		source = "droid_user"
+	}
+	return savedName{name: *header.Title, source: source}, true
 }
 
 // DisplayName also provides a useful name for older snapshots without titles.

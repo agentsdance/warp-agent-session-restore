@@ -105,7 +105,7 @@ func (s Session) Command() ([]string, error) {
 	}
 	var cmd []string
 	switch s.Agent {
-	case "codex":
+	case "codex", "droid":
 		cmd = []string{s.Bin, "resume", s.ID}
 	case "claude":
 		cmd = []string{s.Bin, "--resume", s.ID}
@@ -156,7 +156,7 @@ func Candidates(cfg *config.Config, processes []proc.Process) []Candidate {
 					continue
 				}
 				args := p.Argv[i+1:]
-				if !interactive(a.Name, args) {
+				if !Interactive(a, args) {
 					break
 				}
 				bin := p.Argv[i]
@@ -190,17 +190,43 @@ func Candidates(cfg *config.Config, processes []proc.Process) []Candidate {
 	return out
 }
 
-func interactive(agent string, args []string) bool {
-	for _, a := range args {
-		if a == "--help" || a == "-h" || a == "--version" || a == "-V" || agent == "claude" && (a == "-p" || a == "--print" || a == "--bg" || a == "--background") {
-			return false
-		}
+// Interactive excludes utility commands and headless agents, including when
+// global options precede the subcommand. Option values are never subcommands.
+func Interactive(agent config.Agent, args []string) bool {
+	kinds := map[string]config.ValueKind{}
+	for _, flag := range agent.ValueFlags {
+		kinds[flag] = config.ValueRequired
 	}
-	if len(args) == 0 {
-		return true
+	for _, flag := range agent.DropArgs {
+		kinds[flag.Flag] = flag.Value
 	}
 	blocked := map[string]bool{"exec": true, "e": true, "app-server": true, "mcp-server": true, "mcp": true, "login": true, "logout": true, "features": true, "debug": true, "review": true, "completion": true, "doctor": true, "update": true, "auth": true, "agents": true, "attach": true, "plugin": true, "hooks": true}
-	return !blocked[args[0]]
+	if agent.Name == "droid" {
+		for _, command := range []string{"daemon", "search", "find", "computer", "help"} {
+			blocked[command] = true
+		}
+	}
+	firstPositional := true
+	for i := 0; i < len(args); i++ {
+		a, _, inline := strings.Cut(args[i], "=")
+		if a == "--" {
+			break
+		}
+		if a == "--help" || a == "-h" || a == "--version" || a == "-V" || agent.Name == "droid" && a == "-v" || agent.Name == "claude" && (a == "-p" || a == "--print" || a == "--bg" || a == "--background") {
+			return false
+		}
+		if !strings.HasPrefix(a, "-") && firstPositional {
+			if blocked[a] {
+				return false
+			}
+			firstPositional = false
+		}
+		kind := kinds[a]
+		if !inline && (kind == config.ValueRequired || kind == config.ValueOptional && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-")) {
+			i++
+		}
+	}
+	return true
 }
 
 func FindOpenID(paths []string, pattern string) (string, error) {
@@ -316,7 +342,7 @@ func Discover(cfg *config.Config, processes []proc.Process) ([]Session, []string
 			continue
 		}
 		env := map[string]string{}
-		for _, k := range []string{"CODEX_HOME", "CLAUDE_CONFIG_DIR"} {
+		for _, k := range []string{"CODEX_HOME", "CLAUDE_CONFIG_DIR", "FACTORY_HOME_OVERRIDE"} {
 			if v := c.Process.Env[k]; v != "" {
 				env[k] = v
 			}

@@ -14,6 +14,51 @@ import (
 const nameID = "11111111-1111-4111-8111-111111111111"
 const otherNameID = "22222222-2222-4222-8222-222222222222"
 
+func TestDroidTitleTracksExactSessionAndFactoryHome(t *testing.T) {
+	home, custom := t.TempDir(), t.TempDir()
+	path := filepath.Join(custom, ".factory", "sessions", "encoded-project", nameID+".jsonl")
+	header := func(id, name string, manual bool) string {
+		b, _ := json.Marshal(map[string]any{"type": "session_start", "id": id, "title": name, "isSessionTitleManuallySet": manual})
+		return string(b) + "\n"
+	}
+	sessions := []Session{{Agent: "droid", ID: nameID, Env: map[string]string{"FACTORY_HOME_OVERRIDE": custom}}}
+	nameFile(t, path, header(nameID, "Original", false))
+	CaptureNames(home, sessions, nil, nil)
+	if sessions[0].Name != "Original" || sessions[0].NameSource != "droid_derived" {
+		t.Fatalf("%+v", sessions[0])
+	}
+	nameFile(t, path, header(nameID, "Renamed 会话", true))
+	CaptureNames(home, sessions, nil, nil)
+	if sessions[0].Name != "Renamed 会话" || sessions[0].NameSource != "droid_user" {
+		t.Fatalf("%+v", sessions[0])
+	}
+	previous := &Snapshot{Sessions: append([]Session(nil), sessions...)}
+	for _, invalid := range []string{header(otherNameID, "Wrong", true), `{"type":"session_start"`, header(nameID, "Ambiguous", true)} {
+		nameFile(t, path, invalid)
+		if invalid == header(nameID, "Ambiguous", true) {
+			nameFile(t, filepath.Join(custom, ".factory", "sessions", "second-project", nameID+".jsonl"), invalid)
+		}
+		if _, ok := droidName(filepath.Join(custom, ".factory"), sessions[0]); ok {
+			t.Fatal("accepted invalid or ambiguous header")
+		}
+		CaptureNames(home, sessions, nil, previous)
+		if sessions[0].Name != "Renamed 会话" {
+			t.Fatal("lost last known name")
+		}
+	}
+	os.RemoveAll(filepath.Join(custom, ".factory", "sessions", "second-project"))
+	nameFile(t, path, header(nameID, "", true))
+	CaptureNames(home, sessions, nil, previous)
+	if sessions[0].AgentName != "" {
+		t.Fatal("explicit empty title did not clear name")
+	}
+	sessions[0] = Session{Agent: "droid", ID: nameID}
+	CaptureNames(home, sessions, nil, previous)
+	if sessions[0].NameSource != "fallback" {
+		t.Fatal("title leaked across storage roots")
+	}
+}
+
 func nameFile(t *testing.T, path, contents string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {

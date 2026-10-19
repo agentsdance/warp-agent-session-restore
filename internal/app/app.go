@@ -10,16 +10,15 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/agentsdance/warp-agent-session-restore/internal/config"
 	"github.com/agentsdance/warp-agent-session-restore/internal/proc"
 	"github.com/agentsdance/warp-agent-session-restore/internal/registry"
 	"github.com/agentsdance/warp-agent-session-restore/internal/session"
 	"github.com/agentsdance/warp-agent-session-restore/internal/state"
 	"github.com/agentsdance/warp-agent-session-restore/internal/warpdb"
+	"github.com/google/uuid"
 )
 
 type App struct {
@@ -162,9 +161,13 @@ func (a *App) Hook(agent string, input io.Reader) error {
 		Source     string `json:"source"`
 		Reason     string `json:"reason"`
 		Transcript string `json:"transcript_path"`
+		Parent     string `json:"parent_session_id"`
 	}
 	if err := json.NewDecoder(io.LimitReader(input, 1<<20)).Decode(&payload); err != nil {
 		return err
+	}
+	if payload.Parent != "" {
+		return nil
 	}
 	if !session.ValidID(payload.ID) || !filepath.IsAbs(payload.CWD) {
 		return fmt.Errorf("hook requires session UUID and absolute cwd")
@@ -175,38 +178,13 @@ func (a *App) Hook(agent string, input io.Reader) error {
 	} else if payload.Event != "SessionStart" && payload.Event != "UserPromptSubmit" {
 		return nil
 	}
-	// Follow the hook shell to the actual agent, not an unrelated process in
-	// the same working directory. This also excludes nested subagent hooks.
 	ps, err := proc.List()
 	if err != nil {
 		return err
 	}
-	pid := os.Getppid()
-	agentPID := 0
-	for depth := 0; depth < 12 && pid > 1; depth++ {
-		found := false
-		for _, p := range ps {
-			if p.PID != pid {
-				continue
-			}
-			found = true
-			if proc.Hydrate(&p) == nil {
-				for i, v := range p.Argv {
-					if i > 1 {
-						break
-					}
-					if strings.TrimSuffix(filepath.Base(v), ".js") == agent {
-						agentPID = pid
-						break
-					}
-				}
-			}
-			pid = p.PPID
-			break
-		}
-		if agentPID != 0 || !found {
-			break
-		}
+	agentPID, ignored := hookProcess(*a.Config.AgentByName(agent), ps, os.Getppid(), proc.Hydrate)
+	if ignored {
+		return nil
 	}
 	if agentPID == 0 {
 		return fmt.Errorf("hook has no %s ancestor", agent)

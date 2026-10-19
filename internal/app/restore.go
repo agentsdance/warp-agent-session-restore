@@ -11,11 +11,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/agentsdance/warp-agent-session-restore/internal/proc"
 	"github.com/agentsdance/warp-agent-session-restore/internal/session"
 	"github.com/agentsdance/warp-agent-session-restore/internal/state"
 	"github.com/agentsdance/warp-agent-session-restore/internal/warpdb"
+	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
 )
 
@@ -242,7 +242,7 @@ func (a *App) RunSession(path, pane, batch string) error {
 	cmd.Dir = saved.CWD
 	cmd.Env = os.Environ()
 	for k, v := range saved.Env {
-		if k == "CODEX_HOME" || k == "CLAUDE_CONFIG_DIR" {
+		if k == "CODEX_HOME" || k == "CLAUDE_CONFIG_DIR" || k == "FACTORY_HOME_OVERRIDE" {
 			cmd.Env = append(cmd.Env, k+"="+v)
 		}
 	}

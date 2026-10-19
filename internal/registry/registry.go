@@ -1,6 +1,5 @@
 // Package registry stores the session IDs reported by agent lifecycle hooks.
-// Claude Code does not keep its transcript file open, so a SessionStart hook is
-// the only exact way to learn which session belongs to which Warp pane.
+// Hooks tie Claude Code and Droid conversation IDs to their actual Warp process.
 package registry
 
 import (

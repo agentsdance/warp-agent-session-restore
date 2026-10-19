@@ -20,12 +20,13 @@ import (
 const label = "org.ai-infra.warp-agent-session-restore"
 
 type installation struct {
-	Binary   string `json:"binary"`
-	Settings string `json:"settings"`
-	Hook     string `json:"hook"`
-	Plist    string `json:"plist"`
-	Shell    string `json:"shell,omitempty"`
-	App      string `json:"app,omitempty"`
+	Binary   string      `json:"binary"`
+	Settings string      `json:"settings"`
+	Hook     string      `json:"hook"`
+	Plist    string      `json:"plist"`
+	Shell    string      `json:"shell,omitempty"`
+	App      string      `json:"app,omitempty"`
+	Droid    *droidHooks `json:"droid,omitempty"`
 }
 
 func MergeHooks(data []byte, command string, remove bool) ([]byte, error) {
@@ -36,12 +37,12 @@ func MergeHooks(data []byte, command string, remove bool) ([]byte, error) {
 		}
 	}
 	if doc == nil {
-		return nil, fmt.Errorf("Claude settings must be a JSON object")
+		return nil, fmt.Errorf("settings must be a JSON object")
 	}
 	hooks, ok := doc["hooks"].(map[string]any)
 	if !ok {
 		if _, exists := doc["hooks"]; exists {
-			return nil, fmt.Errorf("Claude hooks must be an object")
+			return nil, fmt.Errorf("hooks must be an object")
 		}
 		hooks = map[string]any{}
 		doc["hooks"] = hooks
@@ -111,6 +112,11 @@ func (a *App) Install(noService bool) error {
 	}
 	plist := filepath.Join(a.Home, "Library", "LaunchAgents", label+".plist")
 	manifest := installation{Binary: bin, Settings: settings, Hook: hook, Plist: plist}
+	droid, droidData, droidMerged, err := a.prepareDroidHooks(bin)
+	if err != nil {
+		return err
+	}
+	manifest.Droid = &droid
 	// Validate all configuration before changing any existing user file.
 	executable, err := os.ReadFile(a.Binary)
 	if err != nil {
@@ -138,6 +144,17 @@ func (a *App) Install(noService bool) error {
 		return err
 	}
 	fmt.Fprintln(a.Out, "  Claude Code session tracking set up.")
+	if len(droidData) > 0 {
+		backup := droid.Path + ".ras-backup-" + time.Now().Format("20060102T150405.000000000")
+		if err = state.Write(backup, droidData, 0o600); err != nil {
+			return err
+		}
+		fmt.Fprintln(a.Out, "  Droid settings backed up:", backup)
+	}
+	if err = state.Write(droid.Path, append(droidMerged, '\n'), 0o600); err != nil {
+		return err
+	}
+	fmt.Fprintln(a.Out, "  Droid session tracking set up.")
 	manifest.Shell, err = a.installShell()
 	if err != nil {
 		return err
@@ -146,6 +163,11 @@ func (a *App) Install(noService bool) error {
 		fmt.Fprintln(a.Out, "  Codex helper set up for new Warp zsh tabs:", manifest.Shell)
 	}
 	a.Config.LocalCodex = manifest.Shell != ""
+	// Existing installations persist their agent list. Add the new built-in
+	// during installation without replacing customized agent definitions.
+	if a.Config.AgentByName("droid") == nil {
+		a.Config.Agents = append(a.Config.Agents, *config.Default(a.Home).AgentByName("droid"))
+	}
 	if err = config.Save(a.Home, a.Config); err != nil {
 		return err
 	}
@@ -201,7 +223,7 @@ func (a *App) printInstallSummary(installed installation, service bool) {
 		fmt.Fprintln(a.Out, "  Background service setup skipped (--no-service). Start recovery in this terminal with:")
 		fmt.Fprintln(a.Out, "   ", command("watch"))
 	}
-	fmt.Fprintln(a.Out, "\nNext: open a new Warp tab and start Codex or Claude Code.")
+	fmt.Fprintln(a.Out, "\nNext: open a new Warp tab and start Codex, Claude Code, or Droid.")
 	if installed.Shell != "" {
 		fmt.Fprintln(a.Out, "To enable the Codex helper in an existing zsh tab:")
 		fmt.Fprintln(a.Out, "  source", session.Quote(filepath.Join(a.Config.StateDir, "shell.zsh")))
@@ -240,6 +262,11 @@ func (a *App) Uninstall() error {
 	merged, err := MergeHooks(data, installed.Hook, true)
 	if err != nil {
 		return err
+	}
+	if installed.Droid != nil {
+		if err := removeDroidHooks(*installed.Droid); err != nil {
+			return err
+		}
 	}
 	_ = exec.Command("/bin/launchctl", "bootout", "gui/"+strconv.Itoa(os.Getuid())+"/"+label).Run()
 	if err = state.Write(installed.Settings, append(merged, '\n'), 0o600); err != nil {

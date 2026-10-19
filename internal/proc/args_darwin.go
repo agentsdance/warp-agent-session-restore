@@ -10,7 +10,7 @@ import (
 )
 
 // Arguments reads the original NUL-delimited argv, not ps's lossy rendering.
-// Only the two needed environment values are retained; secrets are discarded.
+// Only pane identity and agent storage overrides are retained; secrets are discarded.
 func Arguments(pid int) ([]string, map[string]string, error) {
 	b, err := unix.SysctlRaw("kern.procargs2", pid)
 	if err != nil {
@@ -42,7 +42,7 @@ func parseProcArgs(b []byte) ([]string, map[string]string, error) {
 	env := map[string]string{}
 	for _, field := range bytes.Split(b, []byte{0}) {
 		k, v, ok := strings.Cut(string(field), "=")
-		if ok && (k == "WARP_TERMINAL_SESSION_UUID" || k == "CODEX_HOME" || k == "CLAUDE_CONFIG_DIR") {
+		if ok && (k == "WARP_TERMINAL_SESSION_UUID" || k == "CODEX_HOME" || k == "CLAUDE_CONFIG_DIR" || k == "FACTORY_HOME_OVERRIDE") {
 			env[k] = v
 		}
 	}

@@ -10,11 +10,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/agentsdance/warp-agent-session-restore/internal/config"
 	"github.com/agentsdance/warp-agent-session-restore/internal/session"
 	"github.com/agentsdance/warp-agent-session-restore/internal/state"
 	"github.com/agentsdance/warp-agent-session-restore/internal/warpdb"
+	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
 )
 
@@ -231,6 +231,27 @@ func TestRunnerUsesExactArgvAndCWDAndDoesNotRunTwice(t *testing.T) {
 	want += realHome + "\n--resume\n" + s.Sessions[0].ID + "\n--model\na b'$(false)\n"
 	if string(b) != want {
 		t.Fatalf("Claude resume arguments: %q", b)
+	}
+	// Droid resumes an exact ID and preserves runtime settings as argv values.
+	s.Sessions[0].Agent = "droid"
+	s.Sessions[0].ID = uuid.NewString()
+	s.Sessions[0].Args = []string{"--settings", "/settings with spaces.json", "--auto", "low"}
+	if err := state.Save(path, s); err != nil {
+		t.Fatal(err)
+	}
+	batch = uuid.NewString()
+	for range 2 {
+		if err := a.RunSession(path, pane, batch); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b, err = os.ReadFile(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want += realHome + "\nresume\n" + s.Sessions[0].ID + "\n--settings\n/settings with spaces.json\n--auto\nlow\n"
+	if string(b) != want {
+		t.Fatalf("Droid resume arguments or duplicate: %q", b)
 	}
 }
 

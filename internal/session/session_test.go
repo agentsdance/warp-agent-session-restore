@@ -38,6 +38,48 @@ func TestOptionsAndShellDoNotReplayPromptOrExecuteValues(t *testing.T) {
 	}
 }
 
+func TestDroidResumePreservesOptionsWithoutForkingOrReplayingPrompt(t *testing.T) {
+	a := *config.Default(t.TempDir()).AgentByName("droid")
+	for _, start := range [][]string{
+		{"resume", nameID, "--fork", "--last"},
+		{"--fork", otherNameID, "--resume", nameID},
+		{"-r", "--worktree", "branch", "--cwd", "/old path"},
+		{"--resume=" + nameID, "-w", "branch", "--worktree-dir", "/old path"},
+	} {
+		args := append(start, "--settings", "/a path/settings.json", "--auto=low", "--append-system-prompt", "text with 'quotes'", "--use-spec", "original prompt", "--", "--prompt-option")
+		got, err := KeepOptions(a, args)
+		want := []string{"--settings", "/a path/settings.json", "--auto=low", "--append-system-prompt", "text with 'quotes'", "--use-spec"}
+		if err != nil || !reflect.DeepEqual(got, want) {
+			t.Fatalf("%q: %q %v", start, got, err)
+		}
+		cmd, err := (Session{Agent: "droid", Bin: "/path/droid", ID: nameID, CWD: "/project", Args: got}).Command()
+		if err != nil || !reflect.DeepEqual(cmd, append([]string{"/path/droid", "resume", nameID}, want...)) {
+			t.Fatalf("wrong resume: %q %v", cmd, err)
+		}
+	}
+}
+
+func TestInteractiveRejectsDroidUtilitiesBehindGlobalOptions(t *testing.T) {
+	a := *config.Default(t.TempDir()).AgentByName("droid")
+	for _, command := range []string{"exec", "daemon", "search", "find", "computer", "help", "mcp", "plugin", "doctor", "update"} {
+		for _, args := range [][]string{{command}, {"--settings", "settings.json", command}, {"--settings=settings.json", command}} {
+			if Interactive(a, args) {
+				t.Fatalf("accepted noninteractive command %q", args)
+			}
+		}
+	}
+	for _, args := range [][]string{{"-v"}, {"--help"}, {"resume", "--help"}} {
+		if Interactive(a, args) {
+			t.Fatalf("accepted help/version %q", args)
+		}
+	}
+	for _, args := range [][]string{nil, {"resume", nameID}, {"--settings", "exec", "resume", nameID}, {"--append-system-prompt", "--help"}, {"--", "exec"}} {
+		if !Interactive(a, args) {
+			t.Fatalf("rejected interactive command %q", args)
+		}
+	}
+}
+
 func TestOpenTranscriptSkipsSubagentsAndRejectsAmbiguity(t *testing.T) {
 	home := t.TempDir()
 	a := config.Default(home).AgentByName("codex")
