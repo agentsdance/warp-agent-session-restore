@@ -1,0 +1,10 @@
+/bin/
+*.test
+coverage.out
+.DS_Store
+/.warp-agent-session-restore/
+/.restore-agent-sessions/
+.env
+.env.*
+!.env.example
+*.log
