@@ -56,8 +56,9 @@ curl -fsSL https://warp-restore.ai-infra.org/install.sh | sh -s -- --bin-dir "$H
 
 The chosen directory must be on your PATH to run the command by name.
 
-Setup installs the app in `~/.warp-agent-session-restore`, backs up and updates
-Claude Code settings, and registers background recovery to start immediately
+Setup installs the background app at `~/Applications/Warp Restore.app` and a
+command helper in `~/.warp-agent-session-restore`, backs up and updates Claude
+Code settings, and registers background recovery to start immediately
 and at login. The installer reports each completed step, shows whether automatic
 restore is enabled, and prints commands for checking saved sessions and removing
 the setup.
@@ -82,10 +83,18 @@ warp-restore uninstall
 You can also download the binary for your Mac from [Releases](https://github.com/agentsdance/warp-agent-session-restore/releases),
 make it executable with `chmod +x`, and run it with `install`.
 
-macOS may ask `warp-agent-session-restore` for permission to access other apps'
-data. Allow that prompt so the background service can read Warp's layout
-database. Until macOS resolves the prompt, background capture can wait even
-though the LaunchAgent is running; foreground capture from Warp may still work.
+In **System Settings → Privacy & Security → Files & Folders → Warp Restore**,
+enable **Data shared by Warp and affiliated apps** so the background service can
+read Warp's layout database. macOS 27 requires this manual step and does not show
+an automatic permission prompt. On earlier macOS versions, allow the prompt if
+one appears.
+
+macOS 27 cannot enable this targeted permission for a bare command-line process
+without a bundle ID ([Apple release notes](https://developer.apple.com/documentation/macos-release-notes/macos-27-release-notes)).
+The installer creates a locally signed app bundle for the background helper;
+no developer account or build tools are needed. After updating, macOS may ask
+you to enable the permission again. Old entries named
+`warp-agent-session-restore` can remain in Settings; use **Warp Restore**.
 
 For Codex versions supporting `--no-daemon`, installation adds a marked block to
 `.zshrc` (or `$ZDOTDIR/.zshrc`). In new Warp zsh shells, `codex` runs with
@@ -108,7 +117,7 @@ them with `--no-daemon` to make them capturable.
 The macOS LaunchAgent is named `org.ai-infra.warp-agent-session-restore`.
 Its definition is installed at
 `~/Library/LaunchAgents/org.ai-infra.warp-agent-session-restore.plist`.
-It runs `~/.warp-agent-session-restore/bin/warp-agent-session-restore watch`.
+It runs `~/Applications/Warp Restore.app/Contents/MacOS/warp-agent-session-restore watch`.
 `launchd` starts it at login and restarts it if it exits.
 
 The watcher captures supported sessions every five seconds, preserves the

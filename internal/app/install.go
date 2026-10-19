@@ -25,6 +25,7 @@ type installation struct {
 	Hook     string `json:"hook"`
 	Plist    string `json:"plist"`
 	Shell    string `json:"shell,omitempty"`
+	App      string `json:"app,omitempty"`
 }
 
 func MergeHooks(data []byte, command string, remove bool) ([]byte, error) {
@@ -115,11 +116,17 @@ func (a *App) Install(noService bool) error {
 	if err != nil {
 		return err
 	}
+	serviceBin, bundle, err := a.installBundle(executable)
+	if err != nil {
+		return err
+	}
+	manifest.App = bundle
 	fmt.Fprintln(a.Out, "Setting up Warp Agent Session Restore...")
 	if err = state.Write(bin, executable, 0o700); err != nil {
 		return err
 	}
-	fmt.Fprintln(a.Out, "  App installed:", bin)
+	fmt.Fprintln(a.Out, "  Command helper installed:", bin)
+	fmt.Fprintln(a.Out, "  Background app installed:", bundle)
 	if len(data) > 0 {
 		backup := settings + ".ras-backup-" + time.Now().Format("20060102T150405.000000000")
 		if err = state.Write(backup, data, 0o600); err != nil {
@@ -149,12 +156,26 @@ func (a *App) Install(noService bool) error {
 		a.printInstallSummary(manifest, false)
 		return nil
 	}
-	if err = state.Write(plist, []byte(a.plist(bin)), 0o600); err != nil {
+	if err = state.Write(plist, []byte(a.plist(serviceBin)), 0o600); err != nil {
 		return err
 	}
 	domain := "gui/" + strconv.Itoa(os.Getuid())
 	_ = exec.Command("/bin/launchctl", "bootout", domain+"/"+label).Run()
-	if out, err := exec.Command("/bin/launchctl", "bootstrap", domain, plist).CombinedOutput(); err != nil {
+	var out []byte
+	// launchd can briefly reject registration while a previous job is being
+	// removed. Retry that specific transient error without hiding other failures.
+	for attempt := 0; attempt < 4; attempt++ {
+		out, err = exec.Command("/bin/launchctl", "bootstrap", domain, plist).CombinedOutput()
+		if err == nil {
+			break
+		}
+		exit, ok := err.(*exec.ExitError)
+		if !ok || exit.ExitCode() != 5 || attempt == 3 {
+			break
+		}
+		time.Sleep(time.Duration(1<<attempt) * 100 * time.Millisecond)
+	}
+	if err != nil {
 		return fmt.Errorf("setup saved, but macOS could not start background recovery: %w: %s\nRetry setup: %s\nRun recovery in this terminal: %s", err, out,
 			session.Shell([]string{bin, "--home", a.Home, "install"}),
 			session.Shell([]string{bin, "--home", a.Home, "watch"}))
@@ -185,7 +206,8 @@ func (a *App) printInstallSummary(installed installation, service bool) {
 		fmt.Fprintln(a.Out, "To enable the Codex helper in an existing zsh tab:")
 		fmt.Fprintln(a.Out, "  source", session.Quote(filepath.Join(a.Config.StateDir, "shell.zsh")))
 	}
-	fmt.Fprintln(a.Out, "If macOS asks to access other apps' data, allow it so recovery can save Warp's layout.")
+	fmt.Fprintln(a.Out, "Allow Warp layout access in System Settings > Privacy & Security > Files & Folders > Warp Restore.")
+	fmt.Fprintln(a.Out, "Enable 'Data shared by Warp and affiliated apps'. On macOS 27 this must be enabled manually.")
 	fmt.Fprintln(a.Out, "\nCheck saved sessions:", command("status"))
 	fmt.Fprintln(a.Out, "Remove setup:        ", command("uninstall"))
 	fmt.Fprintln(a.Out, "Logs:                ", filepath.Join(a.Config.StateDir, "watch.log"))

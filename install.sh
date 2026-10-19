@@ -105,8 +105,13 @@ main() {
         fail "$command_path is not a regular file. Choose another --bin-dir."
     fi
     alias_path=$bin_dir/warp-restore
+    repair_alias_permissions=false
     if [ -L "$alias_path" ]; then
-        alias_target=$(readlink "$alias_path") || fail "Could not read $alias_path."
+        if ! alias_target=$(readlink "$alias_path" 2>/dev/null); then
+            printf '%s\n' 'macOS may ask for your password to inspect the existing command alias.'
+            alias_target=$(/usr/bin/sudo /usr/bin/readlink "$alias_path") || fail "Could not read $alias_path."
+            repair_alias_permissions=true
+        fi
         case "$alias_target" in
             warp-agent-session-restore|"$command_path") ;;
             *) fail "$alias_path already points to another command. Choose another --bin-dir or remove the link before installing." ;;
@@ -127,9 +132,13 @@ main() {
     if [ ! -L "$alias_path" ]; then
         if [ "$needs_sudo" = true ]; then
             /usr/bin/sudo /bin/ln -s warp-agent-session-restore "$alias_path" || fail "Could not create $alias_path."
+            repair_alias_permissions=true
         else
-            ln -s warp-agent-session-restore "$alias_path" || fail "Could not create $alias_path."
+            (umask 022; ln -s warp-agent-session-restore "$alias_path") || fail "Could not create $alias_path."
         fi
+    fi
+    if [ "$repair_alias_permissions" = true ]; then
+        /usr/bin/sudo /bin/chmod -h 755 "$alias_path" || fail "Could not repair permissions on $alias_path."
     fi
 
     set -- install
