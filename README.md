@@ -131,6 +131,19 @@ from the daemon's files.
 
 ## Background service
 
+Reinstallation waits up to 15 seconds for launchd to finish removing the old
+service before registering its replacement. Earlier versions could report
+`Bootstrap failed: 5: Input/output error` when the previous watcher was still
+shutting down. If registration fails after setup, retry just the service as
+your normal user:
+
+```sh
+launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/org.ai-infra.warp-agent-session-restore.plist"
+```
+
+The installer prints this recovery command on failure. Its files and settings
+remain installed, so another full installation is unnecessary for this retry.
+
 The macOS LaunchAgent is named `org.ai-infra.warp-agent-session-restore`.
 Its definition is installed at
 `~/Library/LaunchAgents/org.ai-infra.warp-agent-session-restore.plist`.
@@ -236,9 +249,14 @@ make install
 
 `--home DIR` uses a separate configuration/state root for testing. It does not
 change the operating-system user or pretend to be a different Warp instance.
-Tests exercise the restart transition, retry/duplicate behavior, both agents'
+Tests exercise the restart transition, retry/duplicate behavior, all agents'
 resume commands, shell argument boundaries, hook merge/uninstall preservation,
 PID reuse, shutdown grace, and reading a live SQLite WAL layout.
+
+To test reinstallation against a real launchd job with a delayed shutdown on a
+logged-in Mac, run `WARP_RESTORE_TEST_LAUNCHD=1 go test -v ./internal/app -run
+'^TestLaunchAgentReinstallWithDelayedExit$'`. This uses an isolated temporary
+service and leaves the installed watcher running.
 
 Live validation has covered saved names against native agent metadata, rename
 capture and persistence using isolated sessions, and launching resume commands

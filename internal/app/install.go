@@ -182,24 +182,9 @@ func (a *App) Install(noService bool) error {
 		return err
 	}
 	domain := "gui/" + strconv.Itoa(os.Getuid())
-	_ = exec.Command("/bin/launchctl", "bootout", domain+"/"+label).Run()
-	var out []byte
-	// launchd can briefly reject registration while a previous job is being
-	// removed. Retry that specific transient error without hiding other failures.
-	for attempt := 0; attempt < 4; attempt++ {
-		out, err = exec.Command("/bin/launchctl", "bootstrap", domain, plist).CombinedOutput()
-		if err == nil {
-			break
-		}
-		exit, ok := err.(*exec.ExitError)
-		if !ok || exit.ExitCode() != 5 || attempt == 3 {
-			break
-		}
-		time.Sleep(time.Duration(1<<attempt) * 100 * time.Millisecond)
-	}
-	if err != nil {
-		return fmt.Errorf("setup saved, but macOS could not start background recovery: %w: %s\nRetry setup: %s\nRun recovery in this terminal: %s", err, out,
-			session.Shell([]string{bin, "--home", a.Home, "install"}),
+	if err := reloadLaunchAgent(domain, label, plist, launchctl, time.Sleep); err != nil {
+		return fmt.Errorf("setup saved, but macOS could not start background recovery: %w\nRetry service registration as your normal user: %s\nRun recovery in this terminal: %s", err,
+			session.Shell([]string{"/bin/launchctl", "bootstrap", domain, plist}),
 			session.Shell([]string{bin, "--home", a.Home, "watch"}))
 	}
 	a.printInstallSummary(manifest, true)
