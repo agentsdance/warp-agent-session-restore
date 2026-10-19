@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
-	"github.com/agentsdance/warp-agent-session-restore/internal/config"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +12,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/agentsdance/warp-agent-session-restore/internal/config"
 	"github.com/agentsdance/warp-agent-session-restore/internal/session"
 	"github.com/agentsdance/warp-agent-session-restore/internal/state"
 )
@@ -106,7 +106,7 @@ func (a *App) Install(noService bool) error {
 	}
 	merged, err := MergeHooks(data, hook, false)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not set up Claude Code session tracking in %s: %w", settings, err)
 	}
 	plist := filepath.Join(a.Home, "Library", "LaunchAgents", label+".plist")
 	manifest := installation{Binary: bin, Settings: settings, Hook: hook, Plist: plist}
@@ -115,21 +115,28 @@ func (a *App) Install(noService bool) error {
 	if err != nil {
 		return err
 	}
+	fmt.Fprintln(a.Out, "Setting up Warp Agent Session Restore...")
 	if err = state.Write(bin, executable, 0o700); err != nil {
 		return err
 	}
+	fmt.Fprintln(a.Out, "  App installed:", bin)
 	if len(data) > 0 {
 		backup := settings + ".ras-backup-" + time.Now().Format("20060102T150405.000000000")
 		if err = state.Write(backup, data, 0o600); err != nil {
 			return err
 		}
+		fmt.Fprintln(a.Out, "  Claude Code settings backed up:", backup)
 	}
 	if err = state.Write(settings, append(merged, '\n'), 0o600); err != nil {
 		return err
 	}
+	fmt.Fprintln(a.Out, "  Claude Code session tracking set up.")
 	manifest.Shell, err = a.installShell()
 	if err != nil {
 		return err
+	}
+	if manifest.Shell != "" {
+		fmt.Fprintln(a.Out, "  Codex helper set up for new Warp zsh tabs:", manifest.Shell)
 	}
 	a.Config.LocalCodex = manifest.Shell != ""
 	if err = config.Save(a.Home, a.Config); err != nil {
@@ -139,7 +146,7 @@ func (a *App) Install(noService bool) error {
 		return err
 	}
 	if noService {
-		fmt.Fprintln(a.Out, "Installed binary and Claude hooks. Background service not started.")
+		a.printInstallSummary(manifest, false)
 		return nil
 	}
 	if err = state.Write(plist, []byte(a.plist(bin)), 0o600); err != nil {
@@ -148,10 +155,40 @@ func (a *App) Install(noService bool) error {
 	domain := "gui/" + strconv.Itoa(os.Getuid())
 	_ = exec.Command("/bin/launchctl", "bootout", domain+"/"+label).Run()
 	if out, err := exec.Command("/bin/launchctl", "bootstrap", domain, plist).CombinedOutput(); err != nil {
-		return fmt.Errorf("installed files, but launchd bootstrap failed: %w: %s", err, out)
+		return fmt.Errorf("setup saved, but macOS could not start background recovery: %w: %s\nRetry setup: %s\nRun recovery in this terminal: %s", err, out,
+			session.Shell([]string{bin, "--home", a.Home, "install"}),
+			session.Shell([]string{bin, "--home", a.Home, "watch"}))
 	}
-	fmt.Fprintln(a.Out, "Installed:", bin, "\nClaude session hooks enabled; background capture and automatic restore enabled.")
+	a.printInstallSummary(manifest, true)
 	return nil
+}
+
+func (a *App) printInstallSummary(installed installation, service bool) {
+	command := func(args ...string) string {
+		return session.Shell(append([]string{installed.Binary, "--home", a.Home}, args...))
+	}
+	fmt.Fprintln(a.Out, "\nSetup complete.")
+	if service {
+		fmt.Fprintf(a.Out, "  Background service registered to start now and at login. Captures every %d seconds.\n", a.Config.PollSeconds)
+		if a.Config.AutoResume {
+			fmt.Fprintln(a.Out, "  Automatic restore is on. Saved sessions open in new windows when Warp restarts.")
+		} else {
+			fmt.Fprintln(a.Out, "  Automatic restore is off in your configuration. Open saved sessions with:")
+			fmt.Fprintln(a.Out, "   ", command("restore"))
+		}
+	} else {
+		fmt.Fprintln(a.Out, "  Background service setup skipped (--no-service). Start recovery in this terminal with:")
+		fmt.Fprintln(a.Out, "   ", command("watch"))
+	}
+	fmt.Fprintln(a.Out, "\nNext: open a new Warp tab and start Codex or Claude Code.")
+	if installed.Shell != "" {
+		fmt.Fprintln(a.Out, "To enable the Codex helper in an existing zsh tab:")
+		fmt.Fprintln(a.Out, "  source", session.Quote(filepath.Join(a.Config.StateDir, "shell.zsh")))
+	}
+	fmt.Fprintln(a.Out, "If macOS asks to access other apps' data, allow it so recovery can save Warp's layout.")
+	fmt.Fprintln(a.Out, "\nCheck saved sessions:", command("status"))
+	fmt.Fprintln(a.Out, "Remove setup:        ", command("uninstall"))
+	fmt.Fprintln(a.Out, "Logs:                ", filepath.Join(a.Config.StateDir, "watch.log"))
 }
 
 func (a *App) plist(bin string) string {

@@ -69,7 +69,7 @@ func run(args []string) error {
 		}
 		return a.Hook(args[1], os.Stdin)
 	case "install":
-		noService := sub.Bool("no-service", false, "install without starting launchd")
+		noService := sub.Bool("no-service", false, "set up session tracking without registering the background service")
 		if err = sub.Parse(args[1:]); err != nil {
 			return err
 		}
@@ -113,12 +113,12 @@ func usage() {
 
 Usage: warp-agent-session-restore [--home DIR] COMMAND
 
-  install       Install Claude hooks and a launchd capture/restore service
+  install       Set up session tracking and automatic recovery in the background
   snapshot      Capture current Warp agent sessions
   status        Show saved session names, counts and capture warnings
   restore       Open saved sessions in Warp (--dry-run, --snapshot FILE)
-  watch         Run capture/restore service in foreground
-  uninstall     Stop service and remove its hooks; retain saved sessions
+  watch         Run session recovery in this terminal
+  uninstall     Stop background recovery and remove its setup; keep saved sessions
 
 macOS / Warp Stable. Restores conversations in new windows. Native Warp
 restoration may leave additional empty windows. No prompts are replayed.`)

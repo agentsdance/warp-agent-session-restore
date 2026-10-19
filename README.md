@@ -7,19 +7,57 @@ the recorded conversation IDs without replaying prompts.
 
 ## Install
 
-Requirements: macOS, Warp Stable, Go 1.25+, and installed Codex / Claude Code CLIs.
+Requirements: macOS, Warp Stable, and installed Codex / Claude Code CLIs.
+
+Paste this into Terminal:
 
 ```sh
-git clone https://github.com/agentsdance/warp-agent-session-restore.git
-cd warp-agent-session-restore
-make install
-~/.warp-agent-session-restore/bin/warp-agent-session-restore status
+curl -fsSL https://raw.githubusercontent.com/agentsdance/warp-agent-session-restore/master/install.sh | sh
 ```
 
-Installation creates a private binary and state directory at
-`~/.warp-agent-session-restore`, adds Claude session hooks while preserving existing
-settings, and starts a user LaunchAgent. Existing settings are backed up first.
-It does not restart Warp or close any running agents.
+The installer downloads the latest release for Apple Silicon or Intel and
+verifies its checksum. No Git, Go, or build tools are needed. Run the same
+command again to update.
+
+The command is installed at `/usr/local/bin/warp-agent-session-restore`, so you
+can run `warp-agent-session-restore` from any directory. Run the installer as
+your normal user; it asks for your macOS password only if needed to write the
+command to `/usr/local/bin`. Background recovery and settings belong to your
+account.
+
+To choose a different command directory, such as `~/.local/bin`, use:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/agentsdance/warp-agent-session-restore/master/install.sh | sh -s -- --bin-dir "$HOME/.local/bin"
+```
+
+The chosen directory must be on your PATH to run the command by name.
+
+Setup installs the app in `~/.warp-agent-session-restore`, backs up and updates
+Claude Code settings, and registers background recovery to start immediately
+and at login. The installer reports each completed step, shows whether automatic
+restore is enabled, and prints commands for checking saved sessions and removing
+the setup.
+
+After setup, open a new Warp tab and start Codex or Claude Code. With automatic
+restore enabled (the default), supported sessions are saved every five seconds
+and reopened in new windows when Warp restarts.
+
+Check your saved sessions with:
+
+```sh
+warp-agent-session-restore status
+```
+
+If there is no snapshot yet, keep Warp open with an agent running and check
+again after a few seconds. To remove background recovery and its setup:
+
+```sh
+warp-agent-session-restore uninstall
+```
+
+You can also download the binary for your Mac from [Releases](https://github.com/agentsdance/warp-agent-session-restore/releases),
+make it executable with `chmod +x`, and run it with `install`.
 
 macOS may ask `warp-agent-session-restore` for permission to access other apps'
 data. Allow that prompt so the background service can read Warp's layout
@@ -59,13 +97,12 @@ restore markers and per-session locks guard against duplicate launches.
 ## Commands
 
 ```sh
-ras="$HOME/.warp-agent-session-restore/bin/warp-agent-session-restore"
-"$ras" snapshot             # capture immediately
-"$ras" status               # saved names, counts and identification warnings
-"$ras" restore --dry-run    # inspect generated Warp YAML
-"$ras" restore              # open saved sessions
-"$ras" watch                # foreground service; only one watcher is allowed
-"$ras" uninstall            # stop service, remove managed hooks/shell block
+warp-agent-session-restore snapshot             # capture immediately
+warp-agent-session-restore status               # saved names, counts and identification warnings
+warp-agent-session-restore restore --dry-run    # inspect generated Warp YAML
+warp-agent-session-restore restore              # open saved sessions
+warp-agent-session-restore watch                # foreground service; only one watcher is allowed
+warp-agent-session-restore uninstall            # stop service, remove managed hooks/shell block
 ```
 
 `restore --snapshot /absolute/path/to/snapshot.json` restores a historical
@@ -127,9 +164,14 @@ Logs: `~/.warp-agent-session-restore/watch.log`.
 
 ## Development
 
+Building from source requires Go 1.25+:
+
 ```sh
+git clone https://github.com/agentsdance/warp-agent-session-restore.git
+cd warp-agent-session-restore
 make test
 make build
+make install
 ```
 
 `--home DIR` uses a separate configuration/state root for testing. It does not
@@ -142,6 +184,19 @@ Live validation has covered saved names against native agent metadata, rename
 capture and persistence using isolated sessions, and launching resume commands
 in Warp with test agents. A full Warp restart with real conversations has not
 yet been validated end to end.
+
+### Releases
+
+Push a version tag such as `v1.0.0` to run the release workflow. It runs the
+tests, builds macOS binaries for Apple Silicon and Intel, and publishes both
+with `SHA256SUMS` on GitHub Releases. A published release is required for the
+download installer; it never builds from source on the user's computer.
+
+To install a particular release:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/agentsdance/warp-agent-session-restore/master/install.sh | WARP_RESTORE_VERSION=v1.0.0 sh
+```
 
 References: [Warp launch configurations](https://docs.warp.dev/terminal/sessions/launch-configurations),
 [Warp URI scheme](https://docs.warp.dev/terminal/more-features/uri-scheme), and

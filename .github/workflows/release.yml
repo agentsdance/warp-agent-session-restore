@@ -1,0 +1,41 @@
+name: Release
+
+on:
+  push:
+    tags: ['v[0-9]*']
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: make test
+      - name: Build macOS downloads
+        env:
+          CGO_ENABLED: '0'
+          GOOS: darwin
+        run: |
+          mkdir -p dist
+          for architecture in arm64 amd64; do
+            GOARCH="$architecture" go build -trimpath -ldflags='-s -w' -o "dist/warp-agent-session-restore-darwin-$architecture" .
+          done
+          cd dist
+          shasum -a 256 warp-agent-session-restore-darwin-* > SHA256SUMS
+      - name: Publish downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          release_flags=()
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            release_flags+=(--prerelease)
+          fi
+          gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes "${release_flags[@]}"
