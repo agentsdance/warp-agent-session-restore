@@ -268,6 +268,7 @@ func (a *App) RunSession(path, pane, batch string) error {
 	if err = cmd.Start(); err != nil {
 		return err
 	}
+	a.recordRecoveryStart(batch, saved, cmd.Process.Pid, proc.WarpID(ps))
 	if err = state.Write(marker, []byte(time.Now().Format(time.RFC3339)), 0o600); err != nil {
 		fmt.Fprintln(a.Err, "could not record resume:", err)
 	}

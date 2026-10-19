@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -56,6 +55,16 @@ func (a *App) LoadSnapshot(path string) (*session.Snapshot, error) {
 }
 
 func (a *App) Capture() (*session.Snapshot, error) {
+	return a.capture(false)
+}
+
+// CaptureCurrent explicitly accepts today's open sessions as the new baseline.
+// Older recovery data is archived before replacing the saved snapshot.
+func (a *App) CaptureCurrent() (*session.Snapshot, error) {
+	return a.capture(true)
+}
+
+func (a *App) capture(acceptCurrent bool) (*session.Snapshot, error) {
 	lock, err := state.Lock(filepath.Join(a.Config.StateDir, "capture.lock"), true)
 	if err != nil {
 		return nil, err
@@ -73,11 +82,65 @@ func (a *App) Capture() (*session.Snapshot, error) {
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
-	if previous != nil && previous.WarpID != warp && len(previous.Sessions) > 0 {
+	if !acceptCurrent && previous != nil && previous.WarpID != warp && len(previous.Sessions) > 0 {
 		var done restoreState
 		if state.Load(a.restoreStatePath(), &done) != nil || done.WarpID != warp {
 			return nil, fmt.Errorf("previous Warp sessions await restoration; use restore or let watch restore them")
 		}
+	}
+	s, err := a.observe(previous)
+	if err != nil {
+		return nil, err
+	}
+	if s.WarpID != warp {
+		return nil, fmt.Errorf("Warp changed during capture; saved snapshot preserved")
+	}
+	if acceptCurrent {
+		if err := validateCurrent(s); err != nil {
+			return nil, err
+		}
+		if err := a.archiveRecovery(previous); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := a.verifyRecovery(previous, s); err != nil {
+			return nil, err
+		}
+		session.Merge(previous, s, s.Taken, time.Duration(a.Config.ExitGraceSeconds)*time.Second)
+	}
+	panes := map[string]bool{}
+	for _, p := range s.Layout.Panes() {
+		panes[p.UUID] = true
+	}
+	for _, v := range s.Sessions {
+		if !panes[v.Pane] {
+			s.Warnings = append(s.Warnings, "session pane absent from Warp layout; will restore in a new tab")
+		}
+	}
+	if previous != nil && equivalent(previous, s) {
+		return previous, nil
+	}
+	if previous != nil {
+		if err := state.Save(filepath.Join(a.Config.HistoryDir(), previous.ID+".json"), previous); err != nil {
+			return nil, err
+		}
+	}
+	if err := state.Save(a.Config.SnapshotPath(), s); err != nil {
+		return nil, err
+	}
+	a.pruneHistory()
+	return s, nil
+}
+
+// observe is read-only: it never adopts a snapshot or changes recovery progress.
+func (a *App) observe(previous *session.Snapshot) (*session.Snapshot, error) {
+	ps, err := proc.List()
+	if err != nil {
+		return nil, err
+	}
+	warp := proc.WarpID(ps)
+	if warp == "" {
+		return nil, fmt.Errorf("Warp is not running")
 	}
 	layout, err := warpdb.Read(a.Config.WarpDB)
 	if err != nil {
@@ -102,31 +165,6 @@ func (a *App) Capture() (*session.Snapshot, error) {
 	s := &session.Snapshot{Version: 1, ID: uuid.NewString(), WarpID: warp, Taken: time.Now(), Layout: layout, Sessions: sessions, Warnings: warnings}
 	// Processes left behind by a dead Warp lifetime must not satisfy recovery.
 	s.Sessions = sessionsInWarp(s.Sessions, current, warp)
-	if err := a.verifyRecovery(previous, s); err != nil {
-		return nil, err
-	}
-	session.Merge(previous, s, s.Taken, time.Duration(a.Config.ExitGraceSeconds)*time.Second)
-	panes := map[string]bool{}
-	for _, p := range s.Layout.Panes() {
-		panes[p.UUID] = true
-	}
-	for _, v := range s.Sessions {
-		if !panes[v.Pane] {
-			s.Warnings = append(s.Warnings, "session pane absent from Warp layout; will restore in a new tab")
-		}
-	}
-	if previous != nil && equivalent(previous, s) {
-		return previous, nil
-	}
-	if previous != nil {
-		if err := state.Save(filepath.Join(a.Config.HistoryDir(), previous.ID+".json"), previous); err != nil {
-			return nil, err
-		}
-	}
-	if err := state.Save(a.Config.SnapshotPath(), s); err != nil {
-		return nil, err
-	}
-	a.pruneHistory()
 	return s, nil
 }
 
@@ -198,12 +236,13 @@ func (a *App) Hook(agent string, input io.Reader) error {
 }
 
 type restoreState struct {
-	WarpID   string         `json:"warp_id"`
-	Batch    string         `json:"batch"`
-	Time     time.Time      `json:"time"`
-	Entries  []restoreEntry `json:"entries,omitempty"`
-	Next     int            `json:"next,omitempty"`
-	Complete bool           `json:"complete,omitempty"`
+	WarpID   string                      `json:"warp_id"`
+	Batch    string                      `json:"batch"`
+	Time     time.Time                   `json:"time"`
+	Entries  []restoreEntry              `json:"entries,omitempty"`
+	Next     int                         `json:"next,omitempty"`
+	Complete bool                        `json:"complete,omitempty"`
+	Progress map[string]recoveryProgress `json:"progress,omitempty"`
 }
 
 func (a *App) restoreStatePath() string {
@@ -286,44 +325,6 @@ func (a *App) autoRestore(s *session.Snapshot, warp string) (bool, error) {
 	}
 	_, err := a.Restore(s, warp, false)
 	return err == nil, err
-}
-
-func (a *App) Status() error {
-	s, err := a.LoadSnapshot("")
-	if errors.Is(err, os.ErrNotExist) {
-		fmt.Fprintln(a.Out, "No snapshot yet. Run snapshot while agents are open in Warp.")
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	counts := map[string]int{}
-	type sessionName struct {
-		Agent     string `json:"agent"`
-		ID        string `json:"session_id"`
-		Name      string `json:"name"`
-		Source    string `json:"name_source"`
-		AgentName string `json:"agent_name,omitempty"`
-		PaneTitle string `json:"pane_title,omitempty"`
-		TabTitle  string `json:"tab_title,omitempty"`
-	}
-	names := make([]sessionName, 0, len(s.Sessions))
-	for _, v := range s.Sessions {
-		counts[v.Agent]++
-		name, source := v.DisplayName()
-		names = append(names, sessionName{v.Agent, v.ID, name, source, v.AgentName, v.PaneTitle, v.TabTitle})
-	}
-	result := struct {
-		Snapshot     string         `json:"snapshot"`
-		Taken        time.Time      `json:"taken"`
-		Sessions     map[string]int `json:"sessions"`
-		Warnings     []string       `json:"warnings,omitempty"`
-		AutoResume   bool           `json:"auto_resume"`
-		SessionNames []sessionName  `json:"session_names"`
-	}{a.Config.SnapshotPath(), s.Taken, counts, s.Warnings, a.Config.AutoResume, names}
-	b, _ := json.MarshalIndent(result, "", "  ")
-	fmt.Fprintln(a.Out, string(b))
-	return nil
 }
 
 func openURI(uri string) error { return exec.Command("/usr/bin/open", uri).Run() }

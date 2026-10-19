@@ -155,14 +155,36 @@ snapshot while Warp is closed, and detects a restarted Warp by its process ID
 and start time. It then opens saved tabs and starts `codex resume <session-id>`,
 `claude --resume <session-id>`, or `droid resume <session-id>`. Persistent
 dispatch progress and per-session locks guard against duplicate launches.
-The previous snapshot is preserved until every expected conversation is found
-in a live pane under the new Warp process.
+Recovery remembers each conversation once its exact ID is found in a live pane.
+Closing an already verified tab does not undo that progress. A newly launched
+recovery tab that is closed before identification stops blocking recovery after
+its pane and child process have both disappeared for the shutdown grace period,
+provided other agent sessions remain open. Empty captures and still-open,
+unidentified agents continue to preserve the previous snapshot.
+
+`status` reports saved counts separately from live windows, tabs, and identified
+agent sessions. Plain terminal tabs count as tabs but not agent conversations.
+If layout access fails, it reports `live_error` instead of a misleading zero.
+
+If an older installation is stuck preserving sessions you deliberately closed,
+accept the current tabs as the new baseline:
+
+```sh
+warp-restore snapshot --current
+warp-restore status
+```
+
+This archives the old snapshot and recovery state under
+`~/.warp-agent-session-restore/reconciliations` before saving current sessions.
+It refuses incomplete layout reads or agent-identification warnings. Existing
+conversation transcripts and immutable recovery snapshots remain available.
 
 ## Commands
 
 ```sh
 warp-restore snapshot             # capture immediately
-warp-restore status               # saved names, counts and identification warnings
+warp-restore status               # saved sessions, live tab counts and recovery progress
+warp-restore snapshot --current   # archive old recovery and accept current tabs
 warp-restore restore --dry-run    # inspect generated Warp TOML/YAML
 warp-restore restore              # open saved sessions
 warp-restore watch                # foreground service; only one watcher is allowed

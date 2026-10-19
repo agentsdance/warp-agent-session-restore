@@ -52,12 +52,23 @@ func run(args []string) error {
 	sub := flag.NewFlagSet(args[0], flag.ContinueOnError)
 	switch args[0] {
 	case "snapshot":
-		if len(args) != 1 {
-			return fmt.Errorf("snapshot takes no arguments")
+		current := sub.Bool("current", false, "accept current tabs as the baseline; archive the previous snapshot and pending recovery")
+		if err = sub.Parse(args[1:]); err != nil {
+			return err
 		}
-		s, err := a.Capture()
+		if sub.NArg() != 0 {
+			return fmt.Errorf("snapshot takes no positional arguments")
+		}
+		capture := a.Capture
+		if *current {
+			capture = a.CaptureCurrent
+		}
+		s, err := capture()
 		if err != nil {
 			return err
+		}
+		if *current {
+			fmt.Println("Accepted current tabs. Previous snapshot and recovery state are preserved under", a.Config.StateDir+"/reconciliations")
 		}
 		fmt.Printf("Saved %d sessions to %s\n", len(s.Sessions), a.Config.SnapshotPath())
 		for _, w := range s.Warnings {
@@ -124,8 +135,8 @@ Usage: warp-agent-session-restore [--home DIR] COMMAND
 Use --version to show the installed version.
 
   install       Set up session tracking and automatic recovery in the background
-  snapshot      Capture current Warp agent sessions
-  status        Show saved session names, counts and capture warnings
+  snapshot      Capture sessions (--current accepts current tabs after backing up recovery)
+  status        Show saved sessions, live tabs and recovery progress
   restore       Open saved sessions in Warp (--dry-run, --snapshot FILE)
   watch         Run session recovery in this terminal
   uninstall     Stop background recovery and remove its setup; keep saved sessions
