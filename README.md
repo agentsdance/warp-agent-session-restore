@@ -1,5 +1,7 @@
 # Warp Agent Session Restore
 
+[Website](https://warp-restore.ai-infra.org) · [Releases](https://github.com/agentsdance/warp-agent-session-restore/releases) · [Installer source](install.sh)
+
 Resume Codex and Claude Code conversations after restarting Warp on macOS.
 The service snapshots running agents and their Warp pane layout, then opens a
 saved launch configuration when it detects a new Warp app process. It resumes
@@ -12,12 +14,26 @@ Requirements: macOS, Warp Stable, and installed Codex / Claude Code CLIs.
 Paste this into Terminal:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/agentsdance/warp-agent-session-restore/master/install.sh | sh
+curl -fsSL https://warp-restore.ai-infra.org/install.sh | sh
 ```
 
 The installer downloads the latest release for Apple Silicon or Intel and
 verifies its checksum. No Git, Go, or build tools are needed. Run the same
 command again to update.
+
+To review the script before running it:
+
+```sh
+curl -fsSL https://warp-restore.ai-infra.org/install.sh -o install.sh
+less install.sh
+sh install.sh
+```
+
+The same [install.sh](install.sh) is available directly from GitHub:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/agentsdance/warp-agent-session-restore/master/install.sh | sh
+```
 
 The installer adds both `warp-agent-session-restore` and the shorter
 `warp-restore` alias to `/usr/local/bin`. Both names run the same app and use the
@@ -35,7 +51,7 @@ an existing installation.
 To choose a different command directory, such as `~/.local/bin`, use:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/agentsdance/warp-agent-session-restore/master/install.sh | sh -s -- --bin-dir "$HOME/.local/bin"
+curl -fsSL https://warp-restore.ai-infra.org/install.sh | sh -s -- --bin-dir "$HOME/.local/bin"
 ```
 
 The chosen directory must be on your PATH to run the command by name.
@@ -204,7 +220,7 @@ download installer; it never builds from source on the user's computer.
 To install a particular release:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/agentsdance/warp-agent-session-restore/master/install.sh | WARP_RESTORE_VERSION=v0.0.1 sh
+curl -fsSL https://warp-restore.ai-infra.org/install.sh | WARP_RESTORE_VERSION=v0.0.1 sh
 ```
 
 References: [Warp launch configurations](https://docs.warp.dev/terminal/sessions/launch-configurations),
