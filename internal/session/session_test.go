@@ -65,6 +65,46 @@ func TestOpenTranscriptSkipsSubagentsAndRejectsAmbiguity(t *testing.T) {
 	}
 }
 
+func TestOpenTranscriptRecognizesDaemonCreatedTerminalSessions(t *testing.T) {
+	home := t.TempDir()
+	agent := config.Default(home).AgentByName("codex")
+	id := "11111111-1111-4111-8111-111111111111"
+	path := filepath.Join(home, ".codex/sessions/2026/10/19/rollout-date-"+id+".jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, originator string
+		source           any
+		want             bool
+	}{
+		{"terminal through daemon", "codex-tui", "vscode", true},
+		{"editor", "codex_vscode", "vscode", false},
+		{"missing originator", "", "vscode", false},
+		{"other source", "codex-tui", "exec", false},
+		{"subagent", "codex-tui", map[string]any{"subagent": "test"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := json.Marshal(map[string]any{"type": "session_meta", "payload": map[string]any{
+				"id": id, "source": tc.source, "originator": tc.originator,
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			got, err := FindOpenID([]string{path}, agent.OpenFileRegex)
+			if tc.want && (err != nil || got != id) {
+				t.Fatalf("terminal transcript rejected: id=%q err=%v", got, err)
+			}
+			if !tc.want && (err == nil || got != "") {
+				t.Fatalf("non-terminal transcript accepted: id=%q err=%v", got, err)
+			}
+		})
+	}
+}
+
 func TestClaudeMetadataRejectsReusedPID(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.Mkdir(filepath.Join(dir, "sessions"), 0700); err != nil {

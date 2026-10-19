@@ -96,6 +96,12 @@ no developer account or build tools are needed. After updating, macOS may ask
 you to enable the permission again. Old entries named
 `warp-agent-session-restore` can remain in Settings; use **Warp Restore**.
 
+If access still fails after an update because macOS retained the previous app's
+signature, reset only this app's permission with
+`tccutil reset SystemPolicyAppDataDetailed org.ai-infra.warp-agent-session-restore`.
+Then reopen System Settings and enable **Data shared by Warp and affiliated
+apps** for **Warp Restore** again. Resetting the permission does not grant access.
+
 For Codex versions supporting `--no-daemon`, installation adds a marked block to
 `.zshrc` (or `$ZDOTDIR/.zshrc`). In new Warp zsh shells, `codex` runs with
 `--no-daemon` so each terminal owns its transcript. Existing aliases/functions
@@ -111,6 +117,17 @@ For bash/fish or an explicit absolute-path invocation, start Codex with
 `codex --no-daemon` yourself. Already-running shared-daemon sessions cannot be
 matched reliably to their panes and are reported as skipped. Start or resume
 them with `--no-daemon` to make them capturable.
+
+If newer conversations are missing after a restart, check the recovery snapshot
+in `~/.warp-agent-session-restore/recoveries` for identification warnings. The
+watcher can save older local sessions while skipping newer shared-daemon
+sessions. Their transcripts remain in Codex's storage; use
+`codex --no-daemon resume --all` to find and reopen a missing conversation, or
+`codex --no-daemon resume <session-id>` for an exact ID. Terminal transcripts
+originally created through the shared daemon are recognized by their
+`codex-tui` originator even when their saved source is `vscode`. The tool still
+requires each pane's CLI process to hold its own transcript; it does not guess
+from the daemon's files.
 
 ## Background service
 
@@ -216,8 +233,13 @@ PID reuse, shutdown grace, and reading a live SQLite WAL layout.
 
 Live validation has covered saved names against native agent metadata, rename
 capture and persistence using isolated sessions, and launching resume commands
-in Warp with test agents. A full Warp restart with real conversations has not
-yet been validated end to end.
+in Warp with test agents. On 2026-10-19, a real Warp restart on macOS restored all
+11 expected conversations (six Codex and five Claude Code), including a
+daemon-created Codex terminal conversation resumed locally. Verification checked
+the changed Warp process lifetime, each conversation's owning process and native
+metadata, restore claims, absence of duplicate agents, and continued capture
+across watcher polls. This validates local CLI restoration; sessions still using
+the shared Codex daemon remain subject to the mapping limitation above.
 
 ### Releases
 
@@ -229,7 +251,7 @@ download installer; it never builds from source on the user's computer.
 To install a particular release:
 
 ```sh
-curl -fsSL https://warp-restore.ai-infra.org/install.sh | WARP_RESTORE_VERSION=v0.0.2 sh
+curl -fsSL https://warp-restore.ai-infra.org/install.sh | WARP_RESTORE_VERSION=v0.0.3 sh
 ```
 
 References: [Warp launch configurations](https://docs.warp.dev/terminal/sessions/launch-configurations),

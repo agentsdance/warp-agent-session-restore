@@ -223,8 +223,9 @@ func FindOpenID(paths []string, pattern string) (string, error) {
 		var meta struct {
 			Type    string `json:"type"`
 			Payload struct {
-				ID     string          `json:"id"`
-				Source json.RawMessage `json:"source"`
+				ID         string          `json:"id"`
+				Source     json.RawMessage `json:"source"`
+				Originator string          `json:"originator"`
 			} `json:"payload"`
 		}
 		ok := sc.Scan() && json.Unmarshal(sc.Bytes(), &meta) == nil
@@ -233,7 +234,13 @@ func FindOpenID(paths []string, pattern string) (string, error) {
 			continue
 		}
 		var source string
-		if json.Unmarshal(meta.Payload.Source, &source) != nil || source != "cli" {
+		if json.Unmarshal(meta.Payload.Source, &source) != nil {
+			continue
+		}
+		// The shared daemon records terminal sessions as "vscode" with a
+		// codex-tui originator. Resuming locally retains that original metadata.
+		// Require the TUI originator so editor and subagent sessions stay excluded.
+		if source != "cli" && !(source == "vscode" && meta.Payload.Originator == "codex-tui") {
 			continue
 		}
 		ids[m[1]] = true
