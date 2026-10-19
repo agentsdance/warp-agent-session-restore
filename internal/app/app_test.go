@@ -22,6 +22,7 @@ func fixture(t *testing.T) (*App, *session.Snapshot) {
 	t.Helper()
 	home := t.TempDir()
 	a := &App{Home: home, Config: config.Default(home), Binary: "/path with 'quotes'/warp-agent-session-restore", Out: io.Discard, Err: io.Discard}
+	a.Config.RestoreMode = "windows"
 	pane := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	s := &session.Snapshot{Version: 1, ID: uuid.NewString(), WarpID: "before", Layout: &warpdb.Layout{Windows: []warpdb.Window{{Tabs: []warpdb.Tab{{Title: "Agent tab", Group: "Work", Root: &warpdb.Node{Horizontal: true, Children: []*warpdb.Node{{Pane: &warpdb.Pane{UUID: pane, CWD: home, IsFocused: true}}, {Pane: &warpdb.Pane{UUID: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", CWD: home}}}}}}}}}, Sessions: []session.Session{{Agent: "codex", ID: uuid.NewString(), Pane: pane, CWD: home, Bin: "/bin/echo", Args: []string{"--model", "model with spaces"}}}}
 	return a, s
@@ -74,8 +75,9 @@ func TestLaunchFailureCanRetryAndDryRunWritesNothing(t *testing.T) {
 	if _, err := a.autoRestore(s, "after"); err == nil {
 		t.Fatal("expected failure")
 	}
-	if _, err := os.Stat(a.restoreStatePath()); !os.IsNotExist(err) {
-		t.Fatal("failed launch marked complete")
+	var failed restoreState
+	if err := state.Load(a.restoreStatePath(), &failed); err != nil || failed.Next != 0 || failed.Complete {
+		t.Fatal("failed launch marked complete or retry progress lost")
 	}
 	a.launch = func(string) error { return nil }
 	if ok, err := a.autoRestore(s, "after"); err != nil || !ok {

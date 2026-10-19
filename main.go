@@ -85,7 +85,7 @@ func run(args []string) error {
 		return a.Uninstall()
 	case "restore":
 		path := sub.String("snapshot", "", "snapshot file (default latest)")
-		dry := sub.Bool("dry-run", false, "print Warp launch YAML without launching")
+		dry := sub.Bool("dry-run", false, "print Warp tab/launch configurations without launching")
 		if err = sub.Parse(args[1:]); err != nil {
 			return err
 		}
@@ -99,7 +99,7 @@ func run(args []string) error {
 		}
 		pathOut, err := a.Restore(s, proc.WarpID(ps), *dry)
 		if err == nil && !*dry {
-			fmt.Println("Opened Warp launch configuration:", pathOut)
+			fmt.Println("Opened Warp recovery configuration:", pathOut)
 		}
 		return err
 	case "run-session":
@@ -130,6 +130,6 @@ Use --version to show the installed version.
   watch         Run session recovery in this terminal
   uninstall     Stop background recovery and remove its setup; keep saved sessions
 
-macOS / Warp Stable. Restores conversations in new windows. Native Warp
-restoration may leave additional empty windows. No prompts are replayed.`)
+macOS / Warp Stable. Current Warp builds restore into the active window;
+older builds use new windows. Native empty tabs may remain. No prompts are replayed.`)
 }

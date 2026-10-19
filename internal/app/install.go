@@ -199,7 +199,7 @@ func (a *App) printInstallSummary(installed installation, service bool) {
 	if service {
 		fmt.Fprintf(a.Out, "  Background service registered to start now and at login. Captures every %d seconds.\n", a.Config.PollSeconds)
 		if a.Config.AutoResume {
-			fmt.Fprintln(a.Out, "  Automatic restore is on. Saved sessions open in new windows when Warp restarts.")
+			fmt.Fprintln(a.Out, "  Automatic restore is on. Saved sessions reopen when Warp restarts.")
 		} else {
 			fmt.Fprintln(a.Out, "  Automatic restore is off in your configuration. Open saved sessions with:")
 			fmt.Fprintln(a.Out, "   ", command("restore"))

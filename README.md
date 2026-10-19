@@ -4,7 +4,7 @@
 
 Resume Codex, Claude Code, and Factory Droid conversations after restarting Warp on macOS.
 The service snapshots running agents and their Warp pane layout, then opens a
-saved launch configuration when it detects a new Warp app process. It resumes
+saved tab or launch configurations when it detects a new Warp app process. It resumes
 the recorded conversation IDs without replaying prompts.
 
 ## Install
@@ -65,7 +65,7 @@ the setup.
 
 After setup, open a new Warp tab and start Codex, Claude Code, or Droid. With automatic
 restore enabled (the default), supported sessions are saved every five seconds
-and reopened in new windows when Warp restarts.
+and reopened when Warp restarts. Current Warp builds reuse the active window.
 
 Check your saved sessions with:
 
@@ -152,16 +152,18 @@ It runs `~/Applications/Warp Restore.app/Contents/MacOS/warp-agent-session-resto
 
 The watcher captures supported sessions every five seconds, preserves the
 snapshot while Warp is closed, and detects a restarted Warp by its process ID
-and start time. It then opens a launch configuration in new Warp windows and
-starts `codex resume <session-id>` or `claude --resume <session-id>`. Persistent
-restore markers and per-session locks guard against duplicate launches.
+and start time. It then opens saved tabs and starts `codex resume <session-id>`,
+`claude --resume <session-id>`, or `droid resume <session-id>`. Persistent
+dispatch progress and per-session locks guard against duplicate launches.
+The previous snapshot is preserved until every expected conversation is found
+in a live pane under the new Warp process.
 
 ## Commands
 
 ```sh
 warp-restore snapshot             # capture immediately
 warp-restore status               # saved names, counts and identification warnings
-warp-restore restore --dry-run    # inspect generated Warp YAML
+warp-restore restore --dry-run    # inspect generated Warp TOML/YAML
 warp-restore restore              # open saved sessions
 warp-restore watch                # foreground service; only one watcher is allowed
 warp-restore uninstall            # stop service, remove managed hooks/shell block
@@ -188,7 +190,7 @@ restoration commands from running the same conversation concurrently.
   `~/.warp-agent-session-restore/snapshot.json` and retained snapshot history.
 - Restoration resumes the same conversation ID. Saved names label unnamed
   single-pane and fallback tabs; existing custom tab titles take precedence.
-  Warp's launch YAML cannot set custom split-pane/sidebar labels: these labels
+  Warp's configuration formats cannot set custom split-pane/sidebar labels: these labels
   are backed up, but cannot currently be reapplied by this tool.
 - Snapshots are captured every 5 seconds by default. Sessions that disappear
   remain in the snapshot for a 20-second shutdown grace period. A deliberately
@@ -211,15 +213,31 @@ restoration commands from running the same conversation concurrently.
 - Only interactive agent sessions in Warp are supported. Multiple independent
   agents associated with one pane are skipped. Remote/SSH/tmux multiplexing and
   background/shared-server agents are not supported.
-- Restored sessions open in **new Warp windows**. Warp's native restoration may
-  also restore its previous windows; this tool does not close those windows.
-  Tabs containing agents retain their split structure and ordinary shell panes.
-  Exact pane proportions and active-window/tab selection are not restored.
-- Warp launch configurations are a legacy but supported format, used here for
-  multi-window layouts. Native Warp database schema changes can break capture;
-  capture errors preserve the last usable snapshot and appear in `watch.log`.
+- With `restore_mode: "auto"` (the default), Warp Stable builds at or above
+  `0.2026.10.14.08.27.01` use [tab configs](https://docs.warp.dev/terminal/windows/tab-configs).
+  The first saved window's agent tabs open in the active window; additional saved
+  agent windows open separately. This version floor is deliberately conservative.
+  Older or unrecognized builds use legacy launch YAML in new windows. Set
+  `restore_mode` to `"windows"` to force legacy behavior, or `"tabs"` when you
+  have independently verified tab-config support on another build.
+- Native Warp windows and blank tabs may remain. The tool does not close them,
+  target an arbitrary existing window, or replace its panes. Avoid changing Warp's
+  active window while restoration is dispatching tabs. Tabs containing agents
+  retain their splits and ordinary shell panes. Tab configs do not support tab
+  groups; use `"windows"` mode to retain groups. Neither mode restores exact pane
+  proportions or active-window/tab selection.
+- If Warp removes layout entries while their agents are still alive, capture
+  keeps the absent pane identities and their saved tab/split structure alongside
+  current tabs. Process exit still uses the configured shutdown grace period.
+  Native Warp database schema changes can break capture; capture errors preserve
+  the last usable snapshot and appear in `watch.log`.
 - `open` accepting a launch URI means it was dispatched, not that each agent
-  successfully resumed. Agent startup errors remain visible in the new panes.
+  successfully resumed. Each tab acknowledges startup before the next tab is
+  dispatched, and capture waits for exact session IDs in live panes. Failed or
+  uncertain startup preserves the recovery snapshot and reports the wait in
+  `watch.log`; use `restore` to retry. A fresh manual restore may open additional
+  tabs, but per-session locks prevent duplicate agents. Agent startup errors
+  remain visible in the new panes.
   The tool does not automatically submit a new message or continue an interrupted
   action; each agent controls how its conversation resumes.
 - Uninstall preserves snapshots and the binary. Existing shell functions last
@@ -273,6 +291,17 @@ recorded, exited, and resumed through `run-session` in a new pane environment.
 The conversation ID, title, directory, and options matched after rediscovery;
 a duplicate launch was blocked. This Droid check did not restart the full Warp
 application.
+
+The v0.0.6 change was also validated from an independent macOS Terminal using
+SIGKILL against the verified main Warp process, followed by reopening Warp.
+On Warp `0.2026.10.14.08.27.01`, both the v0.0.5 baseline and the patched run
+restored all 14 exact conversations (seven Codex, six Claude Code, one Droid)
+once in live panes under the new Warp lifetime. No orphan agents survived the
+kill. The baseline increased the window count from two to three; the patched
+run kept it at three. Samples through 110 seconds confirmed continued capture
+and no duplicate agents. Native blank tabs remained. This live test covered one
+agent-bearing saved window; multi-window dispatch and split preservation also
+have regression tests.
 
 ### Releases
 

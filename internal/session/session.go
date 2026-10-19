@@ -375,7 +375,6 @@ func Merge(previous, next *Snapshot, now time.Time, grace time.Duration) {
 	for _, s := range next.Sessions {
 		seen[s.Pane] = true
 	}
-	retained := false
 	for _, s := range previous.Sessions {
 		if seen[s.Pane] {
 			continue
@@ -385,10 +384,7 @@ func Merge(previous, next *Snapshot, now time.Time, grace time.Duration) {
 		}
 		if now.Sub(s.MissingSince) < grace {
 			next.Sessions = append(next.Sessions, s)
-			retained = true
 		}
 	}
-	if retained {
-		next.Layout = previous.Layout
-	}
+	retainMissingLayout(previous, next)
 }

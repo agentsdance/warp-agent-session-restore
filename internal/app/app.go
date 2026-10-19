@@ -92,15 +92,6 @@ func (a *App) Capture() (*session.Snapshot, error) {
 		return nil, err
 	}
 	session.CaptureNames(userHome, sessions, layout, previous)
-	panes := map[string]bool{}
-	for _, p := range layout.Panes() {
-		panes[p.UUID] = true
-	}
-	for _, s := range sessions {
-		if !panes[s.Pane] {
-			warnings = append(warnings, "session pane absent from Warp layout; will restore in a new tab")
-		}
-	}
 	current, err := proc.List()
 	if err != nil {
 		return nil, err
@@ -109,7 +100,21 @@ func (a *App) Capture() (*session.Snapshot, error) {
 		return nil, fmt.Errorf("Warp changed during capture; saved snapshot preserved")
 	}
 	s := &session.Snapshot{Version: 1, ID: uuid.NewString(), WarpID: warp, Taken: time.Now(), Layout: layout, Sessions: sessions, Warnings: warnings}
+	// Processes left behind by a dead Warp lifetime must not satisfy recovery.
+	s.Sessions = sessionsInWarp(s.Sessions, current, warp)
+	if err := a.verifyRecovery(previous, s); err != nil {
+		return nil, err
+	}
 	session.Merge(previous, s, s.Taken, time.Duration(a.Config.ExitGraceSeconds)*time.Second)
+	panes := map[string]bool{}
+	for _, p := range s.Layout.Panes() {
+		panes[p.UUID] = true
+	}
+	for _, v := range s.Sessions {
+		if !panes[v.Pane] {
+			s.Warnings = append(s.Warnings, "session pane absent from Warp layout; will restore in a new tab")
+		}
+	}
 	if previous != nil && equivalent(previous, s) {
 		return previous, nil
 	}
@@ -193,9 +198,12 @@ func (a *App) Hook(agent string, input io.Reader) error {
 }
 
 type restoreState struct {
-	WarpID string    `json:"warp_id"`
-	Batch  string    `json:"batch"`
-	Time   time.Time `json:"time"`
+	WarpID   string         `json:"warp_id"`
+	Batch    string         `json:"batch"`
+	Time     time.Time      `json:"time"`
+	Entries  []restoreEntry `json:"entries,omitempty"`
+	Next     int            `json:"next,omitempty"`
+	Complete bool           `json:"complete,omitempty"`
 }
 
 func (a *App) restoreStatePath() string {
@@ -270,7 +278,8 @@ func (a *App) autoRestore(s *session.Snapshot, warp string) (bool, error) {
 		return false, err
 	}
 	if done.WarpID == warp {
-		return false, nil
+		pending := done.Next < len(done.Entries)
+		return pending, a.dispatchRestore(&done)
 	}
 	if !a.Config.AutoResume {
 		return false, fmt.Errorf("Warp restarted; automatic resume is disabled. Run restore")

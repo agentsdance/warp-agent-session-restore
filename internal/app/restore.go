@@ -2,7 +2,6 @@ package app
 
 import (
 	"fmt"
-	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -42,12 +41,21 @@ type node struct {
 	Split    string    `yaml:"split_direction,omitempty"`
 	Panes    []*node   `yaml:"panes,omitempty"`
 	Commands []command `yaml:"commands,omitempty"`
+	PaneID   string    `yaml:"-"`
 }
 type command struct {
 	Exec string `yaml:"exec"`
 }
 
 func LaunchYAML(s *session.Snapshot, binary, home, snapshot, batch string) ([]byte, error) {
+	out, err := buildLaunch(s, binary, home, snapshot, batch)
+	if err != nil {
+		return nil, err
+	}
+	return yaml.Marshal(out)
+}
+
+func buildLaunch(s *session.Snapshot, binary, home, snapshot, batch string) (*launch, error) {
 	saved := map[string]session.Session{}
 	for _, v := range s.Sessions {
 		saved[v.Pane] = v
@@ -58,7 +66,7 @@ func LaunchYAML(s *session.Snapshot, binary, home, snapshot, batch string) ([]by
 		if !filepath.IsAbs(cwd) {
 			cwd = ""
 		}
-		n := &node{CWD: &cwd, Focus: p.IsFocused}
+		n := &node{CWD: &cwd, Focus: p.IsFocused, PaneID: p.UUID}
 		if v, ok := saved[p.UUID]; ok {
 			cwd = v.CWD
 			used[p.UUID] = true
@@ -150,7 +158,7 @@ func LaunchYAML(s *session.Snapshot, binary, home, snapshot, batch string) ([]by
 	if len(out.Windows) == 0 {
 		return nil, fmt.Errorf("no sessions to restore")
 	}
-	return yaml.Marshal(out)
+	return &out, nil
 }
 
 func (a *App) Restore(s *session.Snapshot, warp string, dry bool) (string, error) {
@@ -161,31 +169,29 @@ func (a *App) Restore(s *session.Snapshot, warp string, dry bool) (string, error
 	}
 	batch := uuid.NewString()
 	snapPath := filepath.Join(a.Config.StateDir, "recoveries", batch+".json")
-	data, err := LaunchYAML(&copy, a.Binary, a.Home, snapPath, batch)
+	plan, err := a.prepareLaunch(&copy, snapPath, batch)
 	if err != nil {
 		return "", err
 	}
 	if dry {
-		fmt.Fprint(a.Out, string(data))
+		for _, file := range plan.Files {
+			fmt.Fprint(a.Out, string(file.Data))
+		}
 		return "", nil
 	}
 	if err = state.Save(snapPath, &copy); err != nil {
 		return "", err
 	}
-	name := "warp-agent-session-restore-" + batch + ".yaml"
-	path := filepath.Join(a.Config.LaunchConfigDir, name)
-	if err = state.Write(path, data, 0o600); err != nil {
+	for _, file := range plan.Files {
+		if err = state.Write(file.Path, file.Data, 0o600); err != nil {
+			return "", err
+		}
+	}
+	done := restoreState{WarpID: warp, Batch: batch, Time: time.Now(), Entries: plan.Entries}
+	if err = state.Save(a.restoreStatePath(), done); err != nil {
 		return "", err
 	}
-	// Warp resolves this by the YAML's name, which must match the file stem.
-	uri := "warp://launch/" + url.PathEscape("warp-agent-session-restore-"+batch)
-	if err = a.launch(uri); err != nil {
-		return "", err
-	}
-	if warp != "" {
-		err = state.Save(a.restoreStatePath(), restoreState{warp, batch, time.Now()})
-	}
-	return path, err
+	return plan.Files[0].Path, a.dispatchRestore(&done)
 }
 
 func (a *App) RunSession(path, pane, batch string) error {
@@ -205,6 +211,11 @@ func (a *App) RunSession(path, pane, batch string) error {
 	}
 	if saved == nil {
 		return fmt.Errorf("pane is not in snapshot")
+	}
+	// A pane acknowledgement is separate from successful agent startup. It
+	// lets sequential tab-config dispatch wait for the active window to exist.
+	if err = state.Write(a.openedPath(batch, pane), []byte(time.Now().Format(time.RFC3339)), 0o600); err != nil {
+		return err
 	}
 	argv, err := saved.Command()
 	if err != nil {

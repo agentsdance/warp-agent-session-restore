@@ -169,7 +169,7 @@ func TestShutdownGraceAndWarpGeneration(t *testing.T) {
 	old := &Snapshot{WarpID: "old", Layout: &warpdb.Layout{}, Sessions: []Session{{Pane: "pane"}}}
 	next := &Snapshot{WarpID: "old", Layout: &warpdb.Layout{}}
 	Merge(old, next, now, 20*time.Second)
-	if len(next.Sessions) != 1 || next.Layout != old.Layout {
+	if len(next.Sessions) != 1 {
 		t.Fatal("shutdown destroyed last layout/session")
 	}
 	closed := &Snapshot{WarpID: "old"}

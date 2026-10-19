@@ -74,6 +74,9 @@ type Config struct {
 	WarpDB string `json:"warp_db"`
 	// LaunchConfigDir is where generated Warp launch configurations are written.
 	LaunchConfigDir string `json:"launch_config_dir"`
+	TabConfigDir    string `json:"tab_config_dir"`
+	// RestoreMode is auto (version-gated), tabs, or windows (legacy YAML).
+	RestoreMode string `json:"restore_mode"`
 	// AutoResume runs the resume command directly instead of pre-filling the prompt.
 	AutoResume bool `json:"auto_resume"`
 	// AutoResumeLimit caps how many panes auto-resume, newest first. Zero means no cap.
@@ -99,6 +102,8 @@ func Default(home string) *Config {
 	return &Config{
 		StateDir:         filepath.Join(home, ".warp-agent-session-restore"),
 		WarpDB:           DefaultWarpDB(home),
+		TabConfigDir:     filepath.Join(home, ".warp", "tab_configs"),
+		RestoreMode:      "auto",
 		LaunchConfigDir:  filepath.Join(home, ".warp", "launch_configurations"),
 		AutoResume:       true,
 		AutoResumeLimit:  0,
@@ -217,6 +222,9 @@ func Load(home string) (*Config, error) {
 	}
 	if cfg.PollSeconds < 1 || cfg.ExitGraceSeconds < 0 || cfg.KeepSnapshots < 1 || cfg.AutoResumeLimit < 0 {
 		return nil, fmt.Errorf("invalid polling, retention, grace, or resume limit")
+	}
+	if cfg.RestoreMode != "auto" && cfg.RestoreMode != "tabs" && cfg.RestoreMode != "windows" {
+		return nil, fmt.Errorf("restore_mode must be auto, tabs, or windows")
 	}
 	return cfg, nil
 }
