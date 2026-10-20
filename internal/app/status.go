@@ -102,6 +102,23 @@ func (a *App) Status() error {
 			r.Recovery.Message = "Saved counts are from before recovery. Use restore to retry, or snapshot --current to archive the old state and accept current tabs."
 		}
 	}
+	if live != nil {
+		closed, closeErr := a.pendingWindowClose(s, live.WarpID)
+		if closeErr != nil {
+			return closeErr
+		}
+		if closed != nil {
+			if r.Recovery == nil {
+				r.Recovery = &recoveryStatus{}
+			}
+			r.Recovery.Pending = true
+			if len(live.Layout.Windows) == 0 {
+				r.Recovery.Message = "Last Warp window is closed. Saved sessions are preserved and will restore when a window opens."
+			} else {
+				r.Recovery.Message = "Warp window reopened; saved sessions await verification. Use restore to retry, or snapshot --current to accept current tabs."
+			}
+		}
+	}
 	b, err := json.MarshalIndent(r, "", "  ")
 	if err != nil {
 		return err

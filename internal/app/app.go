@@ -21,11 +21,12 @@ import (
 )
 
 type App struct {
-	Home     string
-	Config   *config.Config
-	Binary   string
-	Out, Err io.Writer
-	launch   func(string) error
+	Home        string
+	Config      *config.Config
+	Binary      string
+	Out, Err    io.Writer
+	launch      func(string) error
+	lastCapture time.Time
 }
 
 func New(home string) (*App, error) {
@@ -95,6 +96,14 @@ func (a *App) capture(acceptCurrent bool) (*session.Snapshot, error) {
 	if s.WarpID != warp {
 		return nil, fmt.Errorf("Warp changed during capture; saved snapshot preserved")
 	}
+	return a.saveCapture(previous, s, acceptCurrent)
+}
+
+// saveCapture runs under capture.lock. Kept separate from process discovery so
+// close/reopen sequences can be tested against exact observed layouts.
+func (a *App) saveCapture(previous, s *session.Snapshot, acceptCurrent bool) (*session.Snapshot, error) {
+	var closed *windowCloseState
+	var err error
 	if acceptCurrent {
 		if err := validateCurrent(s); err != nil {
 			return nil, err
@@ -102,11 +111,21 @@ func (a *App) capture(acceptCurrent bool) (*session.Snapshot, error) {
 		if err := a.archiveRecovery(previous); err != nil {
 			return nil, err
 		}
+		closed, err = a.pendingWindowClose(previous, s.WarpID)
+		if err != nil {
+			return nil, err
+		}
 	} else {
+		closed, err = a.guardWindowCapture(previous, s)
+		if err != nil {
+			return nil, err
+		}
 		if err := a.verifyRecovery(previous, s); err != nil {
 			return nil, err
 		}
-		session.Merge(previous, s, s.Taken, time.Duration(a.Config.ExitGraceSeconds)*time.Second)
+		if closed == nil {
+			session.Merge(previous, s, s.Taken, time.Duration(a.Config.ExitGraceSeconds)*time.Second)
+		}
 	}
 	panes := map[string]bool{}
 	for _, p := range s.Layout.Panes() {
@@ -118,7 +137,7 @@ func (a *App) capture(acceptCurrent bool) (*session.Snapshot, error) {
 		}
 	}
 	if previous != nil && equivalent(previous, s) {
-		return previous, nil
+		return previous, a.clearWindowClose(closed)
 	}
 	if previous != nil {
 		if err := state.Save(filepath.Join(a.Config.HistoryDir(), previous.ID+".json"), previous); err != nil {
@@ -129,7 +148,7 @@ func (a *App) capture(acceptCurrent bool) (*session.Snapshot, error) {
 		return nil, err
 	}
 	a.pruneHistory()
-	return s, nil
+	return s, a.clearWindowClose(closed)
 }
 
 // observe is read-only: it never adopts a snapshot or changes recovery progress.
@@ -236,29 +255,29 @@ func (a *App) Hook(agent string, input io.Reader) error {
 }
 
 type restoreState struct {
-	WarpID   string                      `json:"warp_id"`
-	Batch    string                      `json:"batch"`
-	Time     time.Time                   `json:"time"`
-	Entries  []restoreEntry              `json:"entries,omitempty"`
-	Next     int                         `json:"next,omitempty"`
-	Complete bool                        `json:"complete,omitempty"`
-	Progress map[string]recoveryProgress `json:"progress,omitempty"`
+	WarpID        string                      `json:"warp_id"`
+	Batch         string                      `json:"batch"`
+	Time          time.Time                   `json:"time"`
+	Entries       []restoreEntry              `json:"entries,omitempty"`
+	Next          int                         `json:"next,omitempty"`
+	Complete      bool                        `json:"complete,omitempty"`
+	Progress      map[string]recoveryProgress `json:"progress,omitempty"`
+	WindowCloseID string                      `json:"window_close_id,omitempty"`
 }
 
 func (a *App) restoreStatePath() string {
 	return filepath.Join(a.Config.StateDir, "restore-state.json")
 }
 
-// Watch persists captures and restores once per new Warp app lifetime. Failed
-// captures do not replace a usable snapshot. It survives both Warp and login.
+// Watch persists captures and restores after a new app lifetime or the last
+// window reopening. Failed captures do not replace a usable snapshot.
+// It survives both Warp and login.
 func (a *App) Watch(ctx context.Context) error {
 	lock, err := state.Lock(filepath.Join(a.Config.StateDir, "watch.lock"), false)
 	if err != nil {
 		return fmt.Errorf("watcher already running or lock unavailable: %w", err)
 	}
 	defer lock.Close()
-	ticker := time.NewTicker(time.Duration(a.Config.PollSeconds) * time.Second)
-	defer ticker.Stop()
 	lastMessage := ""
 	for {
 		err = a.tick(ctx)
@@ -268,10 +287,16 @@ func (a *App) Watch(ctx context.Context) error {
 		} else if err == nil {
 			lastMessage = ""
 		}
+		// Check window transitions between full captures, but back off on
+		// errors (especially macOS privacy denials) instead of hammering them.
+		delay := 500 * time.Millisecond
+		if err != nil {
+			delay = time.Duration(a.Config.PollSeconds) * time.Second
+		}
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-ticker.C:
+		case <-time.After(delay):
 		}
 	}
 }
@@ -289,6 +314,41 @@ func (a *App) tick(ctx context.Context) error {
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
+	closed, err := a.pendingWindowClose(s, warp)
+	if err != nil {
+		return err
+	}
+	if s != nil && len(s.Sessions) > 0 && (s.WarpID == warp || closed != nil) {
+		hasWindows, err := warpdb.HasWindows(a.Config.WarpDB)
+		if err != nil {
+			return err
+		}
+		if !hasWindows {
+			if closed == nil || closed.Reopened {
+				return a.recordWindowClose(s, warp)
+			}
+			return nil
+		}
+		if closed != nil {
+			live, err := a.observe(s)
+			if err != nil {
+				return err
+			}
+			if live.WarpID != warp {
+				return fmt.Errorf("Warp changed while checking reopened window; saved snapshot preserved")
+			}
+			restored, err := a.restoreReopenedWindow(s, live)
+			if err != nil {
+				return err
+			}
+			if restored {
+				fmt.Fprintln(a.Out, time.Now().Format(time.RFC3339), "opened saved agent sessions after window reopened")
+			}
+			_, err = a.Capture()
+			a.lastCapture = time.Now()
+			return err
+		}
+	}
 	if s != nil && s.WarpID != warp && len(s.Sessions) > 0 {
 		restored, err := a.autoRestore(s, warp)
 		if err != nil {
@@ -304,7 +364,11 @@ func (a *App) tick(ctx context.Context) error {
 			}
 		}
 	}
+	if time.Since(a.lastCapture) < time.Duration(a.Config.PollSeconds)*time.Second {
+		return nil
+	}
 	_, err = a.Capture()
+	a.lastCapture = time.Now()
 	return err
 }
 

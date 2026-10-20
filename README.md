@@ -66,6 +66,9 @@ the setup.
 After setup, open a new Warp tab and start Codex, Claude Code, or Droid. With automatic
 restore enabled (the default), supported sessions are saved every five seconds
 and reopened when Warp restarts. Current Warp builds reuse the active window.
+Closing the last Warp window with the red close button also preserves the
+saved sessions; they restore when a window opens again, even if Warp itself
+kept running.
 
 Check your saved sessions with:
 
@@ -152,7 +155,8 @@ It runs `~/Applications/Warp Restore.app/Contents/MacOS/warp-agent-session-resto
 
 The watcher captures supported sessions every five seconds, preserves the
 snapshot while Warp is closed, and detects a restarted Warp by its process ID
-and start time. It then opens saved tabs and starts `codex resume <session-id>`,
+and start time. It also detects the last window closing and reopening within
+the same app process. It then opens saved tabs and starts `codex resume <session-id>`,
 `claude --resume <session-id>`, or `droid resume <session-id>`. Persistent
 dispatch progress and per-session locks guard against duplicate launches.
 Recovery remembers each conversation once its exact ID is found in a live pane.
@@ -221,6 +225,14 @@ restoration commands from running the same conversation concurrently.
   remain in the snapshot for a 20-second shutdown grace period. A deliberately
   closed session may be restored if Warp restarts within that period. A session
   created and lost between polls cannot be recovered from this tool's snapshot.
+- The watcher checks for the last window closing every half second between
+  full captures. Once it observes no windows, it preserves the last snapshot
+  beyond the shutdown grace period and waits for a window to reopen before
+  restoring. This checkpoint survives restarting the watcher. Closing a tab
+  while another window or tab remains open uses the normal grace period.
+  A close/reopen entirely between checks can be missed. If Warp keeps a closed
+  agent alive for undo-close, recovery waits for that process to end; agents
+  already reopened by Warp itself are not launched again.
 - Claude uses exact PID/session metadata when available, with process birth
   time checks. Lifecycle hooks provide a fallback for versions without it.
   New hook events, including the next submitted prompt, populate that fallback.

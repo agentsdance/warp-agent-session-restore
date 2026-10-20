@@ -74,4 +74,16 @@ func TestReadCommittedWALAndNestedLayout(t *testing.T) {
 	if l.Panes()[0].Title != "重命名 pane" || l.Panes()[1].Title != "" {
 		t.Fatal("pane labels lost")
 	}
+	if present, err := HasWindows(path); err != nil || !present {
+		t.Fatalf("open window missing: %v", err)
+	}
+	if _, err := db.Exec(`DELETE FROM windows`); err != nil {
+		t.Fatal(err)
+	}
+	if present, err := HasWindows(path); err != nil || present {
+		t.Fatalf("last window closure not observed: %v", err)
+	}
+	if _, err := HasWindows(filepath.Join(t.TempDir(), "missing.sqlite")); err == nil {
+		t.Fatal("unreadable database mistaken for closed windows")
+	}
 }

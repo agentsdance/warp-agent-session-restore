@@ -105,7 +105,14 @@ func sessionsInWarp(sessions []session.Session, ps []proc.Process, warp string) 
 // attempt can be retired only after its new pane and child process disappear
 // for a grace period while other live sessions remain.
 func (a *App) verifyRecovery(previous, next *session.Snapshot) error {
-	if previous == nil || len(previous.Sessions) == 0 || previous.WarpID == next.WarpID {
+	if previous == nil || len(previous.Sessions) == 0 {
+		return nil
+	}
+	closed, err := a.pendingWindowClose(previous, next.WarpID)
+	if err != nil {
+		return err
+	}
+	if previous.WarpID == next.WarpID && closed == nil {
 		return nil
 	}
 	var done restoreState
@@ -114,6 +121,9 @@ func (a *App) verifyRecovery(previous, next *session.Snapshot) error {
 	}
 	if done.WarpID != next.WarpID {
 		return fmt.Errorf("previous Warp sessions await restoration")
+	}
+	if closed != nil && done.WindowCloseID != closed.ID {
+		return fmt.Errorf("closed-window sessions await restoration")
 	}
 	if done.Complete {
 		return nil

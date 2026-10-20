@@ -56,6 +56,23 @@ type Layout struct {
 	Windows []Window
 }
 
+// HasWindows is the inexpensive watcher check between full captures. Warp
+// rewrites window row IDs on save, so those IDs cannot identify reopen events.
+func HasWindows(dbPath string) (bool, error) {
+	u := url.URL{Scheme: "file", Path: dbPath, RawQuery: "mode=ro&_pragma=busy_timeout(3000)"}
+	db, err := sql.Open("sqlite", u.String())
+	if err != nil {
+		return false, err
+	}
+	defer db.Close()
+	var present bool
+	err = db.QueryRow("SELECT EXISTS(SELECT 1 FROM windows)").Scan(&present)
+	if err != nil {
+		return false, fmt.Errorf("read Warp windows: %w", err)
+	}
+	return present, nil
+}
+
 // Panes returns every pane in the layout.
 func (l *Layout) Panes() []*Pane {
 	var out []*Pane

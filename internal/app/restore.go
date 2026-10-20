@@ -198,6 +198,13 @@ func (a *App) Restore(s *session.Snapshot, warp string, dry bool) (string, error
 		}
 	}
 	done := restoreState{WarpID: warp, Batch: batch, Time: time.Now(), Entries: plan.Entries}
+	closed, err := a.pendingWindowClose(s, warp)
+	if err != nil {
+		return "", err
+	}
+	if closed != nil {
+		done.WindowCloseID = closed.ID
+	}
 	if err = state.Save(a.restoreStatePath(), done); err != nil {
 		return "", err
 	}
