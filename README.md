@@ -334,6 +334,14 @@ and no duplicate agents. Native blank tabs remained. This live test covered one
 agent-bearing saved window; multi-window dispatch and split preservation also
 have regression tests.
 
+After installing v0.0.8 with the public installer on 2026-10-20, a Warp restart
+restored two Codex sessions, one Droid session, and one Claude Code session.
+Live process and session metadata matched all four saved IDs, and the user's
+screenshot confirmed the Codex, Droid, and Claude Code icons. After the user
+closed four old non-agent tabs, an explicit snapshot contained only the four
+remaining agent sessions. This check used foreground capture; the updated
+background app still required its macOS data-access permission to be renewed.
+
 ### Releases
 
 Push a version tag such as `v0.0.1` to run the release workflow. It runs the
