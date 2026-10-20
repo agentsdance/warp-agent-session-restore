@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/agentsdance/warp-agent-session-restore/internal/proc"
+	"github.com/agentsdance/warp-agent-session-restore/internal/registry"
 	"github.com/agentsdance/warp-agent-session-restore/internal/session"
 	"github.com/agentsdance/warp-agent-session-restore/internal/state"
 	"github.com/agentsdance/warp-agent-session-restore/internal/warpdb"
@@ -58,6 +59,9 @@ func LaunchYAML(s *session.Snapshot, binary, home, snapshot, batch string) ([]by
 func buildLaunch(s *session.Snapshot, binary, home, snapshot, batch string) (*launch, error) {
 	saved := map[string]session.Session{}
 	for _, v := range s.Sessions {
+		if _, err := agentRunnerPath(snapshot, batch, v.Agent); err != nil {
+			return nil, err
+		}
 		saved[v.Pane] = v
 	}
 	used := map[string]bool{}
@@ -70,7 +74,8 @@ func buildLaunch(s *session.Snapshot, binary, home, snapshot, batch string) (*la
 		if v, ok := saved[p.UUID]; ok {
 			cwd = v.CWD
 			used[p.UUID] = true
-			n.Commands = []command{{session.Shell([]string{binary, "--home", home, "run-session", "--snapshot", snapshot, "--pane", p.UUID, "--batch", batch})}}
+			runner, _ := agentRunnerPath(snapshot, batch, v.Agent)
+			n.Commands = []command{{session.Shell([]string{runner, "--snapshot", snapshot, "--pane", p.UUID, "--batch", batch})}}
 		}
 		return n
 	}
@@ -182,6 +187,11 @@ func (a *App) Restore(s *session.Snapshot, warp string, dry bool) (string, error
 	if err = state.Save(snapPath, &copy); err != nil {
 		return "", err
 	}
+	for _, runner := range plan.Runners {
+		if err = state.Write(runner.Path, runner.Data, 0o700); err != nil {
+			return "", err
+		}
+	}
 	for _, file := range plan.Files {
 		if err = state.Write(file.Path, file.Data, 0o600); err != nil {
 			return "", err
@@ -249,6 +259,23 @@ func (a *App) RunSession(path, pane, batch string) error {
 			return fmt.Errorf("session is already open in Warp")
 		}
 	}
+	fresh := false
+	if saved.Agent == "claude" {
+		// --home isolates restore state, not the agent's own storage. Match
+		// Discover/CaptureNames and the child's inherited home environment.
+		userHome, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+		entries, err := registry.Load(a.Config.RegistryPath())
+		if err != nil {
+			return err
+		}
+		argv, fresh, err = session.ClaudeRestoreCommand(userHome, *saved, entries)
+		if err != nil {
+			return err
+		}
+	}
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Dir = saved.CWD
 	cmd.Env = os.Environ()
@@ -259,7 +286,11 @@ func (a *App) RunSession(path, pane, batch string) error {
 	}
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	name, _ := saved.DisplayName()
-	fmt.Fprintf(a.Out, "Resuming %s session %s (%q)\n", saved.Agent, saved.ID, name)
+	if fresh {
+		fmt.Fprintf(a.Out, "Reopening empty Claude tab %s (%q); no conversation had been saved\n", saved.ID, name)
+	} else {
+		fmt.Fprintf(a.Out, "Resuming %s session %s (%q)\n", saved.Agent, saved.ID, name)
+	}
 	// Ctrl-C is delivered to the entire foreground process group. The agent
 	// handles it as an interruption; the supervisor must keep its lock alive.
 	interrupts := make(chan os.Signal, 4)

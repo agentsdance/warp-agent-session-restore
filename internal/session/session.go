@@ -35,6 +35,7 @@ type Session struct {
 	PID             int               `json:"pid"`
 	Started         time.Time         `json:"started"`
 	MissingSince    time.Time         `json:"missing_since,omitempty"`
+	ClaudeHistory   string            `json:"claude_history,omitempty"`
 }
 
 type Snapshot struct {
@@ -347,7 +348,12 @@ func Discover(cfg *config.Config, processes []proc.Process) ([]Session, []string
 				env[k] = v
 			}
 		}
-		sessions = append(sessions, Session{Agent: c.Agent.Name, ID: id, Pane: c.Pane, CWD: cwd, Bin: c.Bin, Args: args, Env: env, PID: c.Process.PID, Started: started})
+		s := Session{Agent: c.Agent.Name, ID: id, Pane: c.Pane, CWD: cwd, Bin: c.Bin, Args: args, Env: env, PID: c.Process.PID, Started: started}
+		if s.Agent == "claude" {
+			home, _ := os.UserHomeDir()
+			s.ClaudeHistory, _ = ClaudeHistory(home, s, entries)
+		}
+		sessions = append(sessions, s)
 	}
 	counts := map[string]int{}
 	for _, s := range sessions {

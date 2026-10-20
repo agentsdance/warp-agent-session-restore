@@ -182,6 +182,9 @@ func CaptureNames(home string, sessions []Session, layout *warpdb.Layout, previo
 		s := &sessions[i]
 		if p, ok := old[key(*s)]; ok {
 			s.AgentName, s.AgentNameSource = p.AgentName, p.AgentNameSource
+			if p.ClaudeHistory == "present" {
+				s.ClaudeHistory = "present"
+			}
 		}
 		dir := agentHome(home, *s)
 		var name savedName

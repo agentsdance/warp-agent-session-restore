@@ -27,6 +27,7 @@ type launchFile struct {
 }
 type launchPlan struct {
 	Files   []launchFile
+	Runners []launchFile
 	Entries []restoreEntry
 }
 
@@ -82,6 +83,10 @@ func (a *App) prepareLaunch(s *session.Snapshot, snapshot, batch string) (*launc
 		return nil, err
 	}
 	plan := &launchPlan{}
+	plan.Runners, err = agentRunners(s, a.Binary, a.Home, snapshot, batch)
+	if err != nil {
+		return nil, err
+	}
 	if !a.useTabConfigs() {
 		data, err := yaml.Marshal(out)
 		if err != nil {

@@ -101,7 +101,7 @@ func TestLaunchFailureCanRetryAndDryRunWritesNothing(t *testing.T) {
 		t.Fatal("split layout lost")
 	}
 	cmd := layout.Windows[0].Tabs[0].Layout.Panes[0].Commands[0].Exec
-	if !strings.Contains(cmd, "'\"'\"'") || strings.Contains(cmd, s2.Sessions[0].ID) {
+	if !strings.Contains(cmd, "/codex' ") || strings.Contains(cmd, s2.Sessions[0].ID) {
 		t.Fatal("unsafe command or agent data embedded into launch config")
 	}
 }
@@ -222,6 +222,11 @@ func TestRunnerUsesExactArgvAndCWDAndDoesNotRunTwice(t *testing.T) {
 	// Claude has a different resume syntax, but uses the same exact argv path.
 	s.Sessions[0].Agent = "claude"
 	s.Sessions[0].ID = uuid.NewString()
+	s.Sessions[0].Env = map[string]string{"CLAUDE_CONFIG_DIR": filepath.Join(a.Home, ".claude")}
+	transcript := filepath.Join(a.Home, ".claude", "projects", "test", s.Sessions[0].ID+".jsonl")
+	if err := state.Write(transcript, []byte("{}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	state.Save(path, s)
 	if err := a.RunSession(path, pane, uuid.NewString()); err != nil {
 		t.Fatal(err)

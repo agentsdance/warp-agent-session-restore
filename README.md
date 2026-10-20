@@ -212,6 +212,9 @@ restoration commands from running the same conversation concurrently.
   `~/.warp-agent-session-restore/snapshot.json` and retained snapshot history.
 - Restoration resumes the same conversation ID. Saved names label unnamed
   single-pane and fallback tabs; existing custom tab titles take precedence.
+  Private launchers named `codex`, `claude`, and `droid` let Warp recognize the
+  restored agent for its normal tab icon. They are kept inside each recovery
+  batch and are never added to your PATH or substituted for your installed CLIs.
   Warp's configuration formats cannot set custom split-pane/sidebar labels: these labels
   are backed up, but cannot currently be reapplied by this tool.
 - Snapshots are captured every 5 seconds by default. Sessions that disappear
@@ -221,6 +224,12 @@ restoration commands from running the same conversation concurrently.
 - Claude uses exact PID/session metadata when available, with process birth
   time checks. Lifecycle hooks provide a fallback for versions without it.
   New hook events, including the next submitted prompt, populate that fallback.
+  Claude assigns an ID to an empty tab before writing a resumable conversation.
+  If the original startup hook confirms an empty tab and no prompt or resume
+  event exists, recovery reopens it with the same ID using `--session-id`.
+  History is checked again at launch, so a transcript created since capture is
+  resumed normally. Missing history from an actual conversation produces an
+  error and preserves the snapshot; recovery never selects a different chat.
 - Droid uses lifecycle hooks tied to the interactive process and resumes with
   `droid resume <session-id>`. Installation adds Droid to older configurations
   and merges hooks into Factory’s effective user hook file (`hooks.json`, legacy
